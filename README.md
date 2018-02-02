@@ -1,8 +1,6 @@
-# codon_trees
-
 Codon Trees
 ==========
-A python system to build phylogenies for whole bacterial genomes exploiting PATRIC annotation including PGFams (homology groups).
+A Python system to build phylogenies for whole bacterial genomes exploiting PATRIC annotation including PGFams (homology groups).
 Given a list of genome IDs (in a file, one per line), the code will request from PATRIC all the PGFams for those genomes.
 It will analyse the distribution of PGFams among genomes and select those that are universally single-copy (or within specified limits of duplications and absences).
 The maximum number of genes can be specified to limit the run times.
@@ -40,40 +38,91 @@ usage: buildTreeModular.py [-h] [--outgroupIdsFile file] [--maxGenes #]
                            [--raxmlExecutable program_name]
                            [--rateModel model] [--proteinModel model]
                            [--analyzeCodons] [--analyzeProteins]
-                           [--analyzeBoth] [--raxmlNumThreads T] [--runRaxml]
+                           [--analyzeBot] [--raxmlNumThreads T] [--runRaxml]
                            [--debugMode]
                            genomeIdsFile
 
-positional arguments:
-  genomeIdsFile (PATRIC genome ids, one per line, subsequent content on each line ignored)
+positional arguments:  
+  genomeIdsFile (PATRIC genome ids, one per line, subsequent content on each line ignored)  
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --outgroupIdsFile file
-                        ougroup genome ids, one per line (or first column of
-                        TSV)
-  --maxGenes #          maximum number of genes in concatenated alignment [50]
-  --bootstrapReps #     number of raxml 'fast boostrap' replicates [0]
-  --maxGenomesMissing #
-                        maxumum number of genomes missing a member of the gene family
-  --maxGenomesMissing #
-                        maximum number of ingroup genomes missing a member of
-                        any homolog group
+optional arguments:  
+  -h, --help            show this help message and exit  
+  --outgroupIdsFile file  
+                        ougroup genome ids, one per line (or first column of TSV)    
+  --maxGenes #          maximum number of genes in concatenated alignment [50]  
+  --bootstrapReps #     number of raxml 'fast boostrap' replicates [0]  
+  --maxGenomesMissing # maximum number of ingroup genomes missing a member of any homolog group  
   --maxAllowedDups maxDups
-                        maximum duplicated gene occurrences within ingroup
-                        genomes for homolog to be included [0]
+                        maximum duplicated gene occurrences within ingroup genomes for homolog to be included [0]  
   --endGapTrimThreshold maxPropGaps
-                        stringency of end-gap trimming, lower for less
-                        trimming [0.5]
+                        stringency of end-gap trimming, lower for less trimming [0.5]  
   --raxmlExecutable program_name
-                        name of program to call (possibly with path)[raxml]
-  --rateModel model     variable rate category model CAT|GTR [CAT]
-  --proteinModel model  raxml protein substitution model [WAGF]
-  --analyzeCodons       set this flag to analyze codons
-  --analyzeProteins     set this flag to analyze proteins
-  --analyzeBoth         set this flag to analyze both codons and proteins
-  --raxmlNumThreads T   number of threads for raxml [1]
-  --runRaxml            set this flag if you want to run raxml (you can run it
-                        manually later using the command file provided)
-  --debugMode           turns on progress output to stderr
+                        name of program to call (possibly with path)[raxml]  
+  --rateModel model     variable rate category model CAT|GAMMA [CAT]  
+  --proteinModel model  raxml protein substitution model LG|WAG|JTT [WAG]  
+  --analyzeCodons       set this flag to analyze just codons, omitting proteins  
+  --analyzeProteins     set this flag to analyze proteins, omitting codons  
+  --raxmlNumThreads T   number of threads for raxml [1]  
+  --runRaxml            set this flag if you want to run raxml (you can run it manually later using the command file provided)  
+  --debugMode           turns on progress output to stderr  
                         
+
+Input
+-----
+The only required argument to buildTreeModular.py is the name of a file containing PATRIC genome ids.
+There can be a header or not.
+These should be one per line, and can be tab-separated from subsequent fields which will be ignored.
+E.g.:  
+genome.genome_id  
+1075089.3  
+1171377.3  
+1222034.3  
+1232659.5  
+1249526.3  
+
+Output
+------
+A directory will be created, named by appending "_dir" to the end of the name of the file with the genome IDs (after stripping off a terminal ".ids" if it exists).
+All output will go into that directory.
+Here are the files generated by small example based on an input file name of "test9_genomes.id":
+
+929K	test9_genome.genomeGenePgfams.txt  
+130B	test9_genome.singlishCopyPgfams.txt  
+4.0K	test9_genome_8taxa_10cds_10proteins.pgfamsAndGenesIncludedInAlignment.txt  
+135K	test9_genome_8taxa_10cds_10proteins_codonAndProteins.phy  
+100B	test9_genome_8taxa_10cds_10proteins_codonAndProteins.partitions  
+236B	test9_genome_8taxa_10cds_10proteins_codonAndProteins.raxmlCommand.sh  
+10K	RAxML_bootstrap.test9_genome_8taxa_10cds_10proteins_codonAndProteins  
+20K	RAxML_info.test9_genome_8taxa_10cds_10proteins_codonAndProteins  
+480B	RAxML_bipartitionsBranchLabels.test9_genome_8taxa_10cds_10proteins_codonAndProteins  
+468B	RAxML_bipartitions.test9_genome_8taxa_10cds_10proteins_codonAndProteins  
+454B	RAxML_bestTree.test9_genome_8taxa_10cds_10proteins_codonAndProteins  
+
+The first file, ending in 'genomeGenePgfams.txt', has all the PGFam and PATRIC gene ids (fig|###.peg.###) for each input genome ID.
+
+The second file, ending in singlishCopyPgfams.txt, has the PGFam IDs selected for analysis, those meeting the criteria for maximum missing genomes and maximum duplicated genes, and truncated to the maximum number of genes specified (--maxGenomesMissing, --maxAllowedDups, --maxGenes).
+
+The file ending in "8taxa_10cds_10proteins.pgfamsAndGenesIncludedInAlignment.txt" specifies the genes included in each homology group, separately by protein and by codon alignment. Sometimes a gene fails in the codon alignment process and will be present in the protein alignment but missing in the other.
+The "8taxa" in the file name indicates that of the 9 taxa in the input file, one was missing in the data requested from PATRIC. This sometimes happens.
+
+The file ending in "_codonAndProteins.phy" contains the PHLYP-formatted concatenated alignment for all codons and proteins (or just one or the other if specified). 
+
+The file ending in "_codonAndProteins.partitions" tells raxml what the distinct partitions of data are that are to be analyzed separately, namely the 3 codon positions of DNA and the columns of the alignment with the amino acid characters. It also specifies the substitution matrix to be used for the protein data.
+DNA, codon1 = 1-11475\3  
+DNA, codon2 = 2-11475\3  
+DNA, codon3 = 3-11475\3  
+LGF, proteins = 11476-15300  
+
+The file ending in ".raxmlCommand.sh" contains the command line for running raxml on the prepared alignment data. It can be run manually if wanted. E.g.:
+
+raxml -s test9_genome_8taxa_10cds_10proteins_codonAndProteins.phy -n test9_genome_8taxa_10cds_10proteins_codonAndProteins -m GTRGAMMA -q test9_genome_8taxa_10cds_10proteins_codonAndProteins.partitions -p 12345 -T 1 -f a -x 12345 -N 100
+
+The files begining with "RAxML_" are the raxml output files. Of these, the one of interest in this example is this:
+RAxML_bipartitions.test9_genome_8taxa_10cds_10proteins_codonAndProteins
+This is a Newick file including the support values because the --boostrapReps parameter was specified in this case (as 100).
+If the program is run without specifying bootstrapping, then this file will not be generated and the Newick file to select is this:
+RAxML_bestTree.test9_genome_8taxa_10cds_10proteins_codonAndProteins
+
+Note that the file beginning with "RAxML_bipartitionsBranchLabels." is formatted differently and, for example, will not load into the program FigTree. I just ignore it.
+
+Note that the output tree files use as labels the genome IDs. I may add a utility to relabel these to the genome names.
