@@ -1,3 +1,4 @@
+import os
 import sys
 import re
 import requests
@@ -14,11 +15,17 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 debug = False #shared across functions defined here
 base_url="https://www.patricbrc.org/api/"
 
+session = requests.Session()
+if os.environ.has_key("KB_AUTH_TOKEN"):
+    session.headers.update({ 'Authorization' : os.environ.get('KB_AUTH_TOKEN') })
+    print(session.headers)
+
+
 def getGenomeIdsNamesByName(name, limit='10'):
     query = "eq(genome_name,%s)"%name
     query += "&select(genome_id,genome_name)"
     query += "&limit(%s)"%limit
-    ret = requests.get(base_url+"genome/", params=query, headers={"accept":"text/tsv"})
+    ret = session.get(base_url+"genome/", params=query, headers={"accept":"text/tsv"})
     if debug:
         sys.stderr.write(ret.url+"\n")
     return(ret.text.replace('"', ''))
@@ -33,11 +40,11 @@ def getDataForGenomes(genomeIdList, fieldNames):
     query += "&limit(%s)"%len(genomeIdList)
 
     headers={"Content-Type": "application/rqlquery+x-www-form-urlencoded", "accept":"text/tsv"}
-    req = requests.Request('POST', base_url+"genome/", headers=headers, data=query)
+    req = session.Request('POST', base_url+"genome/", headers=headers, data=query)
     prepared = req.prepare()
     #pretty_print_POST(prepared)
-    s = requests.Session()
-    response=s.send(prepared, verify=False)
+
+    response=session.send(prepared, verify=False)
     if not response.ok:
         sys.stderr.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, req.url, len(query)))
         sys.stderr.write("url="+req.url+"\nquery="+query+"\n")
@@ -52,7 +59,7 @@ def getDataForGenomes(genomeIdList, fieldNames):
          #   continue
         retval.append(fields)
     return(retval)
-    #requests.get(base_url+"genome", params=query, headers={"accept":"text/tsv"})
+    #session.get(base_url+"genome", params=query, headers={"accept":"text/tsv"})
     #return(ret.text.replace('"', ''))
 
 def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
@@ -64,8 +71,8 @@ def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
     req = requests.Request('POST', base_url+"genome_feature/", headers=headers, data=query)
     prepared = req.prepare()
     #pretty_print_POST(prepared)
-    s = requests.Session()
-    response=s.send(prepared, verify=False)
+
+    response=session.send(prepared, verify=False)
     if not response.ok:
         sys.stderr.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query)))
         sys.stderr.write("query="+req.url+"\n")
@@ -126,7 +133,7 @@ def getPatricGenesPgfamsForGenomeList(genomeIdList):
         query += "&limit(10000)"
         if debug:
             sys.stderr.write("getPatricGenesPgfamsForGenomeList: about to request genes and pgfams for genome ids:\n%s\n%s\n"%(base_url, query))
-        req = requests.get(base_url+"genome_feature/", params=query) #, headers={"accept":"text/tsv"})
+        req = session.get(base_url+"genome_feature/", params=query) #, headers={"accept":"text/tsv"})
         if debug:
             sys.stderr.write(req.url+"\n")
         for line in req.text.split("\n"):
