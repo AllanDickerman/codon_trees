@@ -17,11 +17,11 @@ parser.add_argument("--maxGenomesMissing", metavar="#", type=int, default=0, hel
 parser.add_argument("--maxAllowedDups", metavar="maxDups", type=int, default=0, help="maximum duplicated gene occurrences within ingroup genomes for homolog to be included [0]")
 parser.add_argument("--endGapTrimThreshold", metavar="maxPropGaps", type=float, default=0.5, help="stringency of end-gap trimming, lower for less trimming [0.5]")
 parser.add_argument("--raxmlExecutable", metavar="program_name", type=str, default="raxml", help="name of program to call (possibly with path)[raxml]")
-parser.add_argument("--rateModel", metavar="model", type=str, default="CAT", help="variable rate category model CAT|GTR [CAT]")
-parser.add_argument("--proteinModel", metavar="model", type=str, default="WAGF", help="raxml protein substitution model [WAGF]")
+parser.add_argument("--rateModel", metavar="rateModel", type=str, choices = ['CAT', 'GAMMA'], default="CAT", help="variable rate category model CAT|GAMMA [CAT]")
+parser.add_argument("--proteinModel", metavar="substModel", type=str, default="WAGF", help="raxml protein substitution model [WAGF]")
 parser.add_argument("--analyzeCodons", action='store_true', help="set this flag to analyze codons")
 parser.add_argument("--analyzeProteins", action='store_true', help="set this flag to analyze proteins")
-parser.add_argument("--analyzeBoth", action='store_true', help="set this flag to analyze both codons and proteins")
+#parser.add_argument("--analyzeBoth", action='store_true', help="set this flag to analyze both codons and proteins")
 parser.add_argument("--raxmlNumThreads", metavar="T", type=int, default=1, help="number of threads for raxml [1]")
 parser.add_argument("--runRaxml", action='store_true', help="set this flag if you want to run raxml (you can run it manually later using the command file provided)")
 parser.add_argument("--debugMode", action='store_true', help="turns on progress output to stderr")
@@ -54,11 +54,9 @@ if len(genomeIds) + len(outgroupIds) < 4:
 fileBase = os.path.basename(args.genomeIdsFile)
 fileBase = re.sub("\..*", "", fileBase)
 
-if args.analyzeBoth:
-    args.analyzeCodons = args.analyzeProteins = True
+# if either codons or proteins is specified, analyze just that, otherwise analyze both
 if not (args.analyzeCodons or args.analyzeProteins):
-    sys.stdout.write("neither analyzeCodons nor analyzeProteins has been set\n  rerun specifying one or the other or both\n")
-    sys.exit(1)
+    args.analyzeCodons = args.analyzeProteins = True
 
 dataDir=fileBase+"_dir/"
 if os.path.exists(dataDir):
