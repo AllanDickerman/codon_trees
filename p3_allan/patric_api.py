@@ -1,3 +1,4 @@
+import os
 import sys
 import re
 import requests
@@ -13,16 +14,18 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 debug = False #shared across functions defined here
 base_url="https://www.patricbrc.org/api/"
-authorization = None
+
+session = requests.Session()
+if os.environ.has_key("KB_AUTH_TOKEN"):
+    session.headers.update({ 'Authorization' : os.environ.get('KB_AUTH_TOKEN') })
+    print(session.headers)
+
 
 def getGenomeIdsNamesByName(name, limit='10'):
     query = "eq(genome_name,%s)"%name
     query += "&select(genome_id,genome_name)"
     query += "&limit(%s)"%limit
-    headers = {"accept":"text/tsv"}
-    if authorization:
-        headers["Authorization"] = authorization
-    ret = requests.get(base_url+"genome/", params=query, headers=headers)
+    ret = session.get(base_url+"genome/", params=query, headers={"accept":"text/tsv"})
     if debug:
         sys.stderr.write(ret.url+"\n")
     return(ret.text.replace('"', ''))
@@ -58,9 +61,7 @@ def getDataForGenomes(genomeIdList, fieldNames):
     query += "&limit(%s)"%len(genomeIdList)
 
     headers={"Content-Type": "application/rqlquery+x-www-form-urlencoded", "accept":"text/tsv"}
-    if authorization:
-        headers["Authorization"] = authorization
-    req = requests.Request('POST', base_url+"genome/", headers=headers, data=query)
+    req = session.Request('POST', base_url+"genome/", headers=headers, data=query)
     prepared = req.prepare()
     #pretty_print_POST(prepared)
     s = requests.Session()
@@ -79,7 +80,7 @@ def getDataForGenomes(genomeIdList, fieldNames):
          #   continue
         retval.append(fields)
     return(retval)
-    #requests.get(base_url+"genome", params=query, headers={"accept":"text/tsv"})
+    #session.get(base_url+"genome", params=query, headers={"accept":"text/tsv"})
     #return(ret.text.replace('"', ''))
 
 def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
@@ -88,15 +89,18 @@ def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
         query += "&select(%s)"%",".join(fieldNames)
     query += "&limit(%d)"%len(patricIdList)
     headers={"Content-Type": "application/rqlquery+x-www-form-urlencoded", "accept":"text/tsv"}
-    if authorization:
-        headers["Authorization"] = authorization
+    req = requests.Request('POST', base_url+"genome_feature/", headers=headers, data=query)
+    prepared = req.prepare()
     req = requests.Request('POST', base_url+"genome_feature/", headers=headers, data=query)
     prepared = req.prepare()
     #pretty_print_POST(prepared)
-    s = requests.Session()
-    response=s.send(prepared, verify=False)
-    if debug:
+
+    response=session.send(prepared, verify=False)
+    if not response.ok:
+        sys.stderr.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query)))
         sys.stderr.write("query="+req.url+"\n")
+        errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query))
+        raise Exception(errorMessage)
     if not response.ok:
         sys.stderr.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query)))
         sys.stderr.write("query="+req.url+"\n")
@@ -151,8 +155,9 @@ def getDnaBioSeqRecordsForPatricIds(patricIdList):
 def getPatricGenesPgfamsForGenomeList(genomeIdList):
     retval = []
     headers={"accept":"text/tsv"}
-    if authorization:
-        headers["Authorization"] = authorization
+    # one genome at a time, so using 'get' should be fine
+    for genomeId in genomeIdList:
+        query="and(%s,%s,%s)"%("eq(genome_id,(%s))"%genomeId, "eq(feature_type,CDS)", "eq(pgfam_id,PGF*)")
     # one genome at a time, so using 'get' should be fine
     for genomeId in genomeIdList:
         query="and(%s,%s,%s)"%("eq(genome_id,(%s))"%genomeId, "eq(feature_type,CDS)", "eq(pgfam_id,PGF*)")
@@ -173,6 +178,71 @@ def getPatricGenesPgfamsForGenomeList(genomeIdList):
             retval.append(row)
     return(retval)
 
+def getPatricGenesPgfamsForGenomeObject(genomeObject):
+# parse a PATRIC genome object (read from json format) for PGFams
+    retval = [] # a list of tupples of (genomeId, Pgfam, geneId)
+    genomeId = genomeObject['id']
+    for feature in genomeObject['features']:
+        if 'family_assignments' in feature:
+            for famAss in feature['family_assignments']:
+                if famAss[0] == 'PGFAM':
+                    genomePgfamGene.append((genomeId, feature['id'], famAss[1]))
+    return retval
+
+def getGenomeObjectProteins(patricIds, genomeObject):
+# return dictionary of patricId -> BioPython.SeqRecord
+    genomeId = genomeObject['id']
+    retval = {}
+    for feature in genomeObject['features']:
+        patricId, product, genomeId, aa_sequence = '', '', '', ''
+        patricId = feature['id']
+        if not patricId in patricIds:
+            continue
+        if "protein_translation" in feature:
+            aa_sequence = feature["protein_translation"]
+        if 'function' in feature:
+            product = feature['function']
+        simpleSeq = Seq(aa_sequence, IUPAC.extended_protein)
+        seqRecord = SeqRecord(simpleSeq, id=patricId, description=product)
+        seqRecord.annotations["genome_id"] = genomeId
+        retval[patricId] = seqRecord
+    return retval
+
+def getGenomeObjectGeneDna(patricIds, genomeObject):
+# return dictionary of patricId -> BioPython.SeqRecord
+    genomeId = genomeObject['id']
+    contigSeq = {}
+    for contig in genomeObject['contigs']:
+        contigSeq[contig['id']] = contig['dna']
+    retval = {} # dict of SeqRecords
+    for feature in genomeObject['features']:
+        if not feature['id'] in patricIds:
+            continue
+        geneId = feature['id']
+        if geneId not in patricIds:
+            continue
+        product = ''
+        if 'product' in feature:
+            product = feature['function']
+        if not 'location' in feature:
+            continue
+        contig, start, ori, length = feature['location'][0] # this should be an array of (contig, start, orientation, length)
+        start = int(float(start))
+        length = int(float(length))
+        if ori == '+':
+            start -= 1
+            simpleSeq = Bio.Seq(contigSeqs[contig][start:start+length], IUPAC.ambiguous_dna)
+        if ori == '-':
+            simpleSeq = Bio.Seq(contigSeqs[contig][start-length:start], IUPAC.ambiguous_dna)
+            simpleSeq = geneSeq[geneId].reverse_complement()
+
+        seqRecord = SeqRecord(simpleSeq, id=patricId, description=product)
+        seqRecord.annotations["genome_id"] = genomeId
+        retval[geneId] = seqRecord
+    return retval
+
+
+'''44
 def getPatricGenesForGenomeList(genomeIdList):
     retval = []
     headers={"accept":"text/tsv"}
@@ -197,3 +267,4 @@ def getPatricGenesForGenomeList(genomeIdList):
                 continue
             retval.append(row)
     return(retval)
+'''
