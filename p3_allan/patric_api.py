@@ -186,7 +186,7 @@ def getPatricGenesPgfamsForGenomeObject(genomeObject):
         if 'family_assignments' in feature:
             for famAss in feature['family_assignments']:
                 if famAss[0] == 'PGFAM':
-                    genomePgfamGene.append((genomeId, feature['id'], famAss[1]))
+                    retval.append((genomeId, feature['id'], famAss[1]))
     return retval
 
 def getGenomeObjectProteins(patricIds, genomeObject):
@@ -231,12 +231,12 @@ def getGenomeObjectGeneDna(patricIds, genomeObject):
         length = int(float(length))
         if ori == '+':
             start -= 1
-            simpleSeq = Bio.Seq(contigSeqs[contig][start:start+length], IUPAC.ambiguous_dna)
+            simpleSeq = Seq(contigSeq[contig][start:start+length], IUPAC.ambiguous_dna)
         if ori == '-':
-            simpleSeq = Bio.Seq(contigSeqs[contig][start-length:start], IUPAC.ambiguous_dna)
-            simpleSeq = geneSeq[geneId].reverse_complement()
+            simpleSeq = Seq(contigSeq[contig][start-length:start], IUPAC.ambiguous_dna)
+            simpleSeq = simpleSeq.reverse_complement()
 
-        seqRecord = SeqRecord(simpleSeq, id=patricId, description=product)
+        seqRecord = SeqRecord(simpleSeq, id=geneId, description=product)
         seqRecord.annotations["genome_id"] = genomeId
         retval[geneId] = seqRecord
     return retval

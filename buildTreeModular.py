@@ -31,6 +31,9 @@ parser.add_argument("--debugMode", action='store_true', help="turns on progress 
 #parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and pgfams from stored file matching genomeIdsFile if it exists")
 args = parser.parse_args()
 
+subprocess.check_call(['which', args.raxmlExecutable])
+phylocode.checkMuscle()
+
 genomeIds = []
 with open(args.genomeIdsFile) as F:
     for line in F:
@@ -91,16 +94,16 @@ else:
 genomeObject=None
 genomeObject_genomeId=None
 if args.genomeObjectFile:
-    try:
+    #try:
         genomeObject = json.load(open(args.genomeObjectFile))
-        genomeObjectGenePgfams = patric_api.getPatricGenesPgfamsForJsonGenomeFile(genomeObject)
+        genomeObjectGenePgfams = patric_api.getPatricGenesPgfamsForGenomeObject(genomeObject)
         genomeGenePgfamList.extend(genomeObjectGenePgfams)
         genomeObject_genomeId = genomeObjectGenePgfams[0][0]
         genomeIds.append(genomeObject_genomeId)
-        if args.debug:
-            sys.stderr.write("parsed genome object from file %s, num PGFam genes=%d\n"%(args.genomeObjectFile, len(genomeObjectGenePgfams)))
-    except Exception as e:
-        sys.stderr.write("Problem reading genome object json file.\n%s\n"%str(e))
+        if args.debugMode:
+            sys.stderr.write("parsed json file %s, got PGFam genes=%d, total now is %d\n"%(args.genomeObjectFile, len(genomeObjectGenePgfams), len(genomeGenePgfamList)))
+    #except Exception as e:
+        #sys.stderr.write("Problem reading genome object json file.\n%s\n"%str(e))
 
 # add outgroup genes+pgfams to list, get dynamically as the outgroup might change from run to run
 if len(outgroupIds):

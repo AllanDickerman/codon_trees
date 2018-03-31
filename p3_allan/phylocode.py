@@ -58,6 +58,9 @@ def getGenesForPgfams(genomeGenePgfam, genomeIdList, singleCopyPgfams):
             genesForPgfams[pgfam].append(gene)
     return genesForPgfams
 
+def checkMuscle():
+    subprocess.check_call(['which', 'muscle'])
+
 def alignSeqRecordsMuscle(seqRecords):
     muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     SeqIO.write(seqRecords, muscleProcess.stdin, 'fasta')
