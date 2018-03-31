@@ -58,6 +58,9 @@ def getGenesForPgfams(genomeGenePgfam, genomeIdList, singleCopyPgfams):
             genesForPgfams[pgfam].append(gene)
     return genesForPgfams
 
+def checkMuscle():
+    subprocess.check_call(['which', 'muscle'])
+
 def alignSeqRecordsMuscle(seqRecords):
     muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     SeqIO.write(seqRecords, muscleProcess.stdin, 'fasta')
@@ -173,19 +176,17 @@ def resolveDuplicatesPerPatricGenome(alignment):
                 reducedSeqs.append(record)
         alignment = alignSeqRecordsMuscle(reducedSeqs)
     return alignment
-"""
-def runGblocksOnAlignmentFile(fastaAlignmentFile, dataType, maxGapsAllowed='h', maxContigNonconserved=8, minBlock=5):
-#Gblocks $f -t=c -b5=h -k=n -p=n -s=y -b3=10 -b4=5 -e=gb2
-    returncode=subprocess.call(['Gblocks', fastaAlignmentFile, '-t='+dataType, '-b5='+maxGapsAllowed, '-b3='+str(maxContigNonconserved), '-b4='+str(minBlock), '-k=n', '-p=n', '-s=y'])
-    sys.stderr.write("Gblocks return code = %s\n"%returncode)
-"""
-def proteinToCodonAlignment(proteinAlignment):
+
+def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
     seqIds=[]
     protSeqDict={}
+    dnaSeqs=[]
     for seqRecord in proteinAlignment:
         seqIds.append(seqRecord.id)
+        if extraDnaSeqs and seqRecord.id in extraDnaSeqs:
+            dnaSeqs.append(extraDnaSeqs[seqRecord.id])
         protSeqDict[seqRecord.id] = seqRecord
-    dnaSeqs = patric_api.getDnaBioSeqRecordsForPatricIds(seqIds)
+    dnaSeqs.extend(patric_api.getDnaBioSeqRecordsForPatricIds(seqIds))
     if debug:
         sys.stdout.write("proteinToCodonAlignment: last DNA seq record before aligning:\n%s"%str(dnaSeqs[-1]))
     missingIds=[]
@@ -201,7 +202,7 @@ def proteinToCodonAlignment(proteinAlignment):
                 tempProtAl.append(seqRecord)
         proteinAlignment = tempProtAl
     #force to be in same order (necessary?)
-    dnaSeqs_ordered = len(dnaSeqs)*[None] #pre-allocate length of array
+    dnaSeqs_ordered = len(seqIds)*[None] #pre-allocate length of array
     for dnaSeq in dnaSeqs:
         index = seqIds.index(dnaSeq.id)
         dnaSeqs_ordered[index] = dnaSeq
