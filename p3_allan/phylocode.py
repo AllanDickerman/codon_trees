@@ -62,7 +62,7 @@ def relabelNewickTree(newick, labelDict):
 # return value has replaced these according to dictionary passed as labelDict
     retval = newick
     for oldLabel in labelDict:
-        retval = re.sub("\b"+oldLabel+"\b", labelDict[oldLabel], retval)
+        retval = re.sub("\\b"+oldLabel+"\\b", labelDict[oldLabel], retval)
     return retval
 
 def checkMuscle():
