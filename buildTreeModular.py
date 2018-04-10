@@ -276,7 +276,27 @@ with open(args.outputDirectory+phyloFileBase+".raxmlCommand.sh", 'w') as F:
     F.write(" ".join(raxmlCommand)+"\n")
 
 if not args.deferRaxml:
-    subprocess.Popen(raxmlCommand, cwd=args.outputDirectory)
+    proc = subprocess.Popen(raxmlCommand, cwd=args.outputDirectory)
+    proc.wait()
+    if args.debugMode:
+        sys.stderr.write("raxml completed")
+    genomeIdToName = {}
+    for genomeId, genomeName in patric_api.getNamesForGenomeIds(allGenomeIds):
+        genomeIdToName[genomeId] = genomeName
+    originalNewick = ""
+    raxmlNewickFileName = args.outputDirectory+"RAxML_bestTree."+phyloFileBase
+    if args.bootstrapReps > 0:
+        raxmlNewickFileName = args.outputDirectory+"RAxML_bestTree."+phyloFileBase
+    F = open(raxmlNewickFileName)
+    originalNewick = F.read()
+    F.close()
+    renamedNewick = phylocode.relabelNewickTree(originalNewick, genomeIdToName)
+    renamedNewickFile = args.outputDirectory+"CodonTreesOutput.nwk"
+    F = open(renamedNewickFile, 'w')
+    F.write(renamedNewick)
+    F.close()
+    if args.debugMode:
+        sys.stderr.write("codonTreeOutput newick file saved to %s\n"%(renamedNewickFile))
 
 sys.stderr.write("analysis output written to directory %s\n"%args.outputDirectory)
 sys.stdout.write("\n") 
