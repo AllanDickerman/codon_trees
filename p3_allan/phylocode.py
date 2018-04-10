@@ -2,7 +2,6 @@ import sys
 import re
 import subprocess
 from Bio.Alphabet import IUPAC
-#from Bio.Alphabet import generic_dna
 from Bio import AlignIO
 from Bio import SeqIO
 from Bio import Alphabet
@@ -57,6 +56,14 @@ def getGenesForPgfams(genomeGenePgfam, genomeIdList, singleCopyPgfams):
         if genome in genomeIdList and pgfam in genesForPgfams:
             genesForPgfams[pgfam].append(gene)
     return genesForPgfams
+
+def relabelNewickTree(newick, labelDict):
+# newick file has tip labels eg genomIDs
+# return value has replaced these according to dictionary passed as labelDict
+    retval = newick
+    for oldLabel in labelDict:
+        retval = re.sub("\\b"+oldLabel+"\\b", labelDict[oldLabel], retval)
+    return retval
 
 def checkMuscle():
     subprocess.check_call(['which', 'muscle'])

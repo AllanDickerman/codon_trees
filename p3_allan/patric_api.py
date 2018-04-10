@@ -61,11 +61,10 @@ def getDataForGenomes(genomeIdList, fieldNames):
     query += "&limit(%s)"%len(genomeIdList)
 
     headers={"Content-Type": "application/rqlquery+x-www-form-urlencoded", "accept":"text/tsv"}
-    req = session.Request('POST', base_url+"genome/", headers=headers, data=query)
+    req = requests.Request('POST', base_url+"genome/", headers=headers, data=query)
     prepared = req.prepare()
     #pretty_print_POST(prepared)
-    s = requests.Session()
-    response=s.send(prepared, verify=False)
+    response=session.send(prepared, verify=False)
     if not response.ok:
         sys.stderr.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, req.url, len(query)))
         sys.stderr.write("url="+req.url+"\nquery="+query+"\n")
