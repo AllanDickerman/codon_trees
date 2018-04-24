@@ -181,12 +181,15 @@ for pgfamId in genesForPgfams: #genesForPgfams:
     proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqRecords)
     proteinAlignment = phylocode.resolveDuplicatesPerPatricGenome(proteinAlignment)
     proteinAlignment.sort()
-    codonAlignment = phylocode.proteinToCodonAlignment(proteinAlignment, genomeObjectGeneDna)
-    if codonAlignment: # if an error happened, we don't do next steps
-        phylocode.relabelSequencesByGenomeId(codonAlignment)
-        if codonAlignment.get_alignment_length() % 3:
-            raise Exception("codon alignment length not multiple of 3 for %s\n"%pgfamId)
-        codonAlignments[pgfamId] = codonAlignment
+    try:
+        codonAlignment = phylocode.proteinToCodonAlignment(proteinAlignment, genomeObjectGeneDna)
+        if codonAlignment: # if an error happened, we don't do next steps
+            phylocode.relabelSequencesByGenomeId(codonAlignment)
+            if codonAlignment.get_alignment_length() % 3:
+                raise Exception("codon alignment length not multiple of 3 for %s\n"%pgfamId)
+            codonAlignments[pgfamId] = codonAlignment
+    except Exception as e:
+        sys.stderr.write("Exeption aligning codons: %s\n"%str(e))
     phylocode.relabelSequencesByGenomeId(proteinAlignment)
     proteinAlignments[pgfamId] = proteinAlignment
 
@@ -286,15 +289,33 @@ if not args.deferRaxml:
     originalNewick = ""
     raxmlNewickFileName = args.outputDirectory+"RAxML_bestTree."+phyloFileBase
     if args.bootstrapReps > 0:
-        raxmlNewickFileName = args.outputDirectory+"RAxML_bestTree."+phyloFileBase
+        raxmlNewickFileName = args.outputDirectory+"RAxML_bipartitions."+phyloFileBase
     F = open(raxmlNewickFileName)
     originalNewick = F.read()
     F.close()
     renamedNewick = phylocode.relabelNewickTree(originalNewick, genomeIdToName)
-    renamedNewickFile = args.outputDirectory+"CodonTreesOutput.nwk"
+    renamedNewickFile = args.outputDirectory+phyloFileBase+"_withGenomeNames.nwk"
     F = open(renamedNewickFile, 'w')
     F.write(renamedNewick)
     F.close()
+    if os.path.isfile(args.outputDirectory+"CodonTreesNewick.nwk"):
+        os.remove(args.outputDirectory+"CodonTreesNewick.nwk")
+    os.symlink(renamedNewickFile,args.outputDirectory+"CodonTreesNewick.nwk")
+
+    # test to see if we can write a figtree nexus file
+    pathToInstall = os.path.abspath(os.path.dirname(sys.argv[0]))        
+    if os.path.exists(pathToInstall+"/figtree.nex"):
+        figtreeParams = phylocode.readFigtreeParameters(pathToInstall+"/figtree.nex")
+        nexusOutfileName = args.outputDirectory+phyloFileBase+".figtree.nex"
+        nexusOut = open(nexusOutfileName, "w")
+        phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams)
+        nexusOut.close()
+        if os.path.isfile(args.outputDirectory+"CodonTreesNexus.nex"):
+            os.remove(args.outputDirectory+"CodonTreesNexus.nex")
+        os.symlink(nexusOutfileName,args.outputDirectory+"CodonTreesNexus.nex")
+        sys.stderr.write("nexus file written to %s\n"%nexusOutfileName)
+        sys.stderr.write("nexus file linked to CodonTreesNexus.nex\n")
+        
     if args.debugMode:
         sys.stderr.write("codonTreeOutput newick file saved to %s\n"%(renamedNewickFile))
 

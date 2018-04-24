@@ -65,6 +65,56 @@ def relabelNewickTree(newick, labelDict):
         retval = re.sub("\\b"+oldLabel+"\\b", labelDict[oldLabel], retval)
     return retval
 
+def writeTranslatedNexusTree(outFile, newick, labelDict, figtreeParameters=None):
+    # intended to use with FigTree to generate figures, but can be used without a figtreeParameters object
+#write taxa block
+    taxonIds = re.findall(r"[(,]([^:(),]+)[,:)]", newick)
+    outFile.write("#NEXUS\nbegin taxa;\n\tdimensions ntax=%d;\n\ttaxlabels\n"%len(taxonIds))
+    for tax in taxonIds:
+        if tax not in labelDict:
+            labelDict[tax] = tax
+        outFile.write("\t\"%s\"\n"%labelDict[tax])
+    outFile.write(";\nend;\n\n")
+# prefix support values with "[&label="
+    newick = re.sub(r"\)(\d+):", r")[&support=\1]:", newick)
+# write trees block
+    outFile.write("begin trees;\n")
+    if labelDict:
+        outFile.write("\ttranslate\n")
+        for tax in taxonIds:
+            translate = tax
+            if tax in labelDict:
+                translate = labelDict[tax]
+            outFile.write("\t\t%s \"%s\",\n"%(tax, translate))
+        outFile.write("\t;\n")
+    outFile.write("\ttree one = [&U] %s\n"%newick)
+    outFile.write("\nend;\n\n")
+# write figtree block
+    if figtreeParameters:
+        figtreeParameters["nodeLabels.isShown"]="true"
+        figtreeParameters["nodeLabels.displayAttribute"]="\"support\""
+        outFile.write("begin figtree;\n")
+        for param in sorted(figtreeParameters):
+            outFile.write("\tset %s=%s;\n"%(param, str(figtreeParameters[param])))
+        outFile.write("\nend;\n\n")
+    return
+
+def readFigtreeParameters(filename):
+    infile = open(filename)
+    retval = {}
+    inFigtreeBlock = False
+    for line in infile:
+        if re.search("begin figtree", line):
+            inFigtreeBlock = True
+        if re.search(r"^end;", line):
+            inFigtreeBlock = False
+        if inFigtreeBlock:
+            m = re.search(r"set\s+(\S.*)=(\S.*);", line)
+            if m:
+                retval[m.group(1)] = m.group(2)
+    return retval
+
+
 def checkMuscle():
     subprocess.check_call(['which', 'muscle'])
 
