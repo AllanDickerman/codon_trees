@@ -1,6 +1,8 @@
 import sys
 import re
 import os.path
+import shutil
+import glob
 import argparse
 import subprocess
 import json
@@ -127,7 +129,7 @@ if args.maxGenomesMissing >= len(genomeIds):
     raise Exception("getSingleCopyPgfams: maxGenomesMissing too large: %d"%args.maxGenomesMissing)
 
 # call to getSingleCopyPgfams uses ingroup taxa, outgroup is not involved in selecting single copy pgfams
-singleCopyPgfams = phylocode.selectSingleCopyPgfams(genomeGenePgfamList, genomeIds, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
+singleCopyPgfams = phylocode.selectSingleCopyPgfams(genomeGenePgfamList, genomeIds, requiredGenome=genomeObject_genomeId, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
 
 if args.debugMode:
     sys.stderr.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))
@@ -197,7 +199,6 @@ sys.stderr.write("protein and codon alignments completed. num prot als = %d, num
 sys.stdout.write("First prot alignment has %d elements\n"%len(proteinAlignments.values()[0]))
 sys.stdout.write("original_id of first prot: %s\n"%proteinAlignments.values()[0][0].annotations['original_id'])
 phylocode.trimAlignments(proteinAlignments, args.endGapTrimThreshold)
-sys.stdout.write("original_id of first prot: %s\n"%proteinAlignments.values()[0][0].annotations['original_id'])
 phylocode.trimAlignments(codonAlignments, args.endGapTrimThreshold)
 
 numTaxa=0
@@ -225,7 +226,10 @@ with open(args.outputDirectory+phyloFileBase+".pgfamsAndGenesIncludedInAlignment
                 for seqRecord in proteinAlignments[pgfamId]:
                     originalId = seqRecord.annotations['original_id']
                     F.write("\t"+originalId)
-                    genesNotIncluded.remove(originalId)
+                    if originalId not in genesNotIncluded:
+                        sys.stderr.write("Problem: originalId %s not in genesForPgfams for %s\n"%(originalId, pgfamId))
+                    else:
+                        genesNotIncluded.remove(originalId)
                     genesIncluded.add(originalId)
                 if len(genesNotIncluded):
                     F.write("\tdeletedParalogs: \t"+"\t".join(genesNotIncluded))
@@ -279,6 +283,9 @@ with open(args.outputDirectory+phyloFileBase+".raxmlCommand.sh", 'w') as F:
     F.write(" ".join(raxmlCommand)+"\n")
 
 if not args.deferRaxml:
+    #remove RAxML files that clash in name, their existence blocks raxml from running
+    for fl in glob.glob(args.outputDirectory+"RAxML_*"+phyloFileBase):
+        os.remove(fl)
     proc = subprocess.Popen(raxmlCommand, cwd=args.outputDirectory)
     proc.wait()
     if args.debugMode:
@@ -290,17 +297,17 @@ if not args.deferRaxml:
     raxmlNewickFileName = args.outputDirectory+"RAxML_bestTree."+phyloFileBase
     if args.bootstrapReps > 0:
         raxmlNewickFileName = args.outputDirectory+"RAxML_bipartitions."+phyloFileBase
+    shutil.copy2(raxmlNewickFileName, args.outputDirectory+"CodonTreeNewick.nwk")
     F = open(raxmlNewickFileName)
     originalNewick = F.read()
     F.close()
     renamedNewick = phylocode.relabelNewickTree(originalNewick, genomeIdToName)
-    renamedNewickFile = args.outputDirectory+phyloFileBase+"_withGenomeNames.nwk"
+    renamedNewickFile = args.outputDirectory+phyloFileBase+"CodonTreeNewick_withGenomeNames.nwk"
     F = open(renamedNewickFile, 'w')
     F.write(renamedNewick)
     F.close()
-    if os.path.isfile(args.outputDirectory+"CodonTreesNewick.nwk"):
-        os.remove(args.outputDirectory+"CodonTreesNewick.nwk")
-    os.symlink(renamedNewickFile,args.outputDirectory+"CodonTreesNewick.nwk")
+    if args.debugMode:
+        sys.stderr.write("codonTreeOutput newick file saved to %s\n"%(renamedNewickFile))
 
     # test to see if we can write a figtree nexus file
     pathToInstall = os.path.abspath(os.path.dirname(sys.argv[0]))        
@@ -308,16 +315,11 @@ if not args.deferRaxml:
         figtreeParams = phylocode.readFigtreeParameters(pathToInstall+"/figtree.nex")
         nexusOutfileName = args.outputDirectory+phyloFileBase+".figtree.nex"
         nexusOut = open(nexusOutfileName, "w")
-        phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams)
+        phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=genomeObject_genomeId)
         nexusOut.close()
-        if os.path.isfile(args.outputDirectory+"CodonTreesNexus.nex"):
-            os.remove(args.outputDirectory+"CodonTreesNexus.nex")
-        os.symlink(nexusOutfileName,args.outputDirectory+"CodonTreesNexus.nex")
         sys.stderr.write("nexus file written to %s\n"%nexusOutfileName)
-        sys.stderr.write("nexus file linked to CodonTreesNexus.nex\n")
+        shutil.copy2(nexusOutfileName, args.outputDirectory+"CodonTree.nex")
         
-    if args.debugMode:
-        sys.stderr.write("codonTreeOutput newick file saved to %s\n"%(renamedNewickFile))
 
 sys.stderr.write("analysis output written to directory %s\n"%args.outputDirectory)
 sys.stdout.write("\n") 
