@@ -14,7 +14,7 @@ from p3_allan import patric_api
 
 debug = False #shared across functions defined here
 
-def selectSingleCopyPgfams(genomeGenePgfamList, genomeIdList, maxGenomesMissing=0, maxAllowedDups=0):
+def selectSingleCopyPgfams(genomeGenePgfamList, genomeIdList, requiredGenome=None, maxGenomesMissing=0, maxAllowedDups=0):
     # given a list of genome_ids, gene_ids, and pgfam_ids
     # find the set of pgfam_ids which satisfy the minPropPresent and maxAllowedDups criteria for specified genomes
     pgfamGenomeCount={}
@@ -43,6 +43,8 @@ def selectSingleCopyPgfams(genomeGenePgfamList, genomeIdList, maxGenomesMissing=
         genomes.add(genome)
     suitablePgfamList = []
     for pgfam in sorted(pgfamGenomeCount, key=lambda id: (pgfamGenomeCount[id], -numDups[id])):
+        if requiredGenome and not requiredGenome in pgfamGenomeCount[pgfam]:
+            continue # does not include a required genome
         if len(pgfamGenomeCount[pgfam]) >= minGenomesPresent and numDups[pgfam] <= maxAllowedDups:
             suitablePgfamList.append(pgfam)
     return suitablePgfamList
@@ -65,7 +67,7 @@ def relabelNewickTree(newick, labelDict):
         retval = re.sub("\\b"+oldLabel+"\\b", labelDict[oldLabel], retval)
     return retval
 
-def writeTranslatedNexusTree(outFile, newick, labelDict, figtreeParameters=None):
+def writeTranslatedNexusTree(outFile, newick, labelDict, figtreeParameters=None, highlightGenome=None):
     # intended to use with FigTree to generate figures, but can be used without a figtreeParameters object
 #write taxa block
     taxonIds = re.findall(r"[(,]([^:(),]+)[,:)]", newick)
@@ -73,7 +75,12 @@ def writeTranslatedNexusTree(outFile, newick, labelDict, figtreeParameters=None)
     for tax in taxonIds:
         if tax not in labelDict:
             labelDict[tax] = tax
-        outFile.write("\t\"%s\"\n"%labelDict[tax])
+        else:
+            labelDict[tax] = "%s_@_%s"%(labelDict[tax], tax)
+        outFile.write("\t\"%s\""%labelDict[tax])
+        if tax == highlightGenome:
+            outFile.write("[&!color=#ff0000]")
+        outFile.write("\n")
     outFile.write(";\nend;\n\n")
 # prefix support values with "[&label="
     newick = re.sub(r"\)(\d+):", r")[&support=\1]:", newick)

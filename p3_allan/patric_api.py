@@ -54,6 +54,16 @@ def getGenomeGroupIds(genomeGroupName):
 def getNamesForGenomeIds(genomeIdList):
     return getDataForGenomes(genomeIdList, ["genome_id", "genome_name"])
 
+def getGenomeIdsByFieldValue(queryField, queryValue):
+    req = requests.get(base_url+"genome/", params="in(%s,%s)"%(queryField, queryValue)) 
+    retval = []
+    if debug:
+        sys.stderr.write("getGenomeIdsByQuery: "+req.url+"\n")
+        sys.stderr.write(req.text+"\n")
+    for line in req.text.split("\n"):
+       retval.append(line)
+    return retval
+
 def getDataForGenomes(genomeIdList, fieldNames):
     query = "in(genome_id,(%s))"%",".join(genomeIdList)
     if fieldNames:
