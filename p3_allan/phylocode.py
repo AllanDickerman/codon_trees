@@ -64,7 +64,7 @@ def relabelNewickTree(newick, labelDict):
 # return value has replaced these according to dictionary passed as labelDict
     retval = newick
     for oldLabel in labelDict:
-        retval = re.sub("\\b"+oldLabel+"\\b", labelDict[oldLabel], retval)
+        retval = re.sub("\\b"+oldLabel+"\\b", '"'+labelDict[oldLabel]+'"', retval)
     return retval
 
 def writeTranslatedNexusTree(outFile, newick, labelDict, figtreeParameters=None, highlightGenome=None):
@@ -75,8 +75,6 @@ def writeTranslatedNexusTree(outFile, newick, labelDict, figtreeParameters=None,
     for tax in taxonIds:
         if tax not in labelDict:
             labelDict[tax] = tax
-        else:
-            labelDict[tax] = "%s_@_%s"%(labelDict[tax], tax)
         outFile.write("\t\"%s\""%labelDict[tax])
         if tax == highlightGenome:
             outFile.write("[&!color=#ff0000]")
@@ -191,6 +189,7 @@ def trimEndGaps(alignment, trimThreshold=0.5):
         trimmedAlignment = alignment[:,leadTrimLen:endPos]
         for i in range(0, len(alignment)):
             trimmedAlignment[i].annotations = alignment[i].annotations
+        alignment = trimmedAlignment
     #alignment.annotation["endgaps_trimmed"] = (leadTrimLen, endTrimLen)
     return(alignment)
 
