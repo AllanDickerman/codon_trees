@@ -6,6 +6,7 @@ import glob
 import argparse
 import subprocess
 import json
+import inspect
 from Bio import codonalign
 from p3_allan import patric_api
 from p3_allan import phylocode
@@ -319,7 +320,14 @@ if not args.deferRaxml:
         sys.stderr.write("codonTree output newick file saved to CodonTree.nwk\n")
 
     # test to see if we can write a figtree nexus file
+    #
+    # We find the template file figtree.nex in the same directory
+    # as our library code. However first try the legacy location.
+    #
     pathToInstall = os.path.abspath(os.path.dirname(sys.argv[0]))        
+    if not os.path.exists(pathToInstall+"/figtree.nex"):
+        pathToInstall = os.path.dirname(inspect.getfile(phylocode))
+
     if os.path.exists(pathToInstall+"/figtree.nex"):
         figtreeParams = phylocode.readFigtreeParameters(pathToInstall+"/figtree.nex")
         nexusOutfileName = args.outputDirectory+phyloFileBase+".figtree.nex"
