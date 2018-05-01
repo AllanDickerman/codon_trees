@@ -338,13 +338,14 @@ if not args.deferRaxml:
         shutil.copy2(nexusOutfileName, args.outputDirectory+"CodonTree.nex")
         
 OUT = open(args.outputDirectory+"CodonTree.stats", 'w')
-OUT.write("Statistics for CodonTree")
+OUT.write("Statistics for CodonTree\n")
 OUT.write("Num_genomes\t%s\n"%numTaxa)
 OUT.write("Num_protein_alignments\t%s\n"%len(proteinAlignments))
 OUT.write("Num_aligned_amino_acids\t%s\n"%proteinPositions)
 OUT.write("Num_CDS_alignments\t%s\n"%len(proteinAlignments))
 OUT.write("Num_aligned_nucleotides\t%s\n"%codonPositions)
-OUT.write("raxml_command_line\t%s\n"%" ".join(raxmlCommand))
+OUT.write("PGFams\t%s\n"%",".join(sorted(proteinAlignments)))
+OUT.write("command_line\t%s\n"%" ".join(raxmlCommand))
 OUT.close()
 if args.pathToFigtree:
     subprocess.Popen(["java", "-jar", args.pathToFigtree, "-graphic", "PDF", args.outputDirectory+"CodonTree.nex", args.outputDirectory+"CodonTree.pdf"])
