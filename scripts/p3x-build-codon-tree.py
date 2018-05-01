@@ -338,7 +338,7 @@ if not args.deferRaxml:
         shutil.copy2(nexusOutfileName, args.outputDirectory+"CodonTree.nex")
         
 OUT = open(args.outputDirectory+"CodonTree.stats", 'w')
-OUT.write("Statistics for CodonTree")
+OUT.write("Statistics for CodonTree\n")
 OUT.write("Num_genomes\t%s\n"%numTaxa)
 OUT.write("Num_protein_alignments\t%s\n"%len(proteinAlignments))
 OUT.write("Num_aligned_amino_acids\t%s\n"%proteinPositions)
