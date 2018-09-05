@@ -8,6 +8,9 @@ import subprocess
 import json
 import inspect
 from Bio import codonalign
+
+codon_trees_lib_path = os.path.dirname(sys.argv[0]).replace("scripts", "lib")
+sys.path.append(codon_trees_lib_path)
 from p3_allan import patric_api
 from p3_allan import phylocode
 
