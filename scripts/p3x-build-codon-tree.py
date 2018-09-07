@@ -6,15 +6,15 @@ import glob
 import argparse
 import subprocess
 import json
-import inspect
 from Bio import codonalign
 
-codon_trees_lib_path = os.path.dirname(sys.argv[0]).replace("scripts", "lib")
-sys.path.append(codon_trees_lib_path)
-from p3_allan import patric_api
-from p3_allan import phylocode
+Codon_trees_lib_path = os.path.dirname(sys.argv[0]).replace("scripts", "lib")
+sys.path.append(Codon_trees_lib_path)
+import patric_api
+import phylocode
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
 parser.add_argument("genomeIdsFile", type=str, help="file with PATRIC genome IDs, one per line, optional content after tab delimiter ignored")
 parser.add_argument("--genomeObjectFile", metavar="file", type=str, help="genome object (json file) to be added to ingroup")
 #parser.add_argument("--genomeObjectName", metavar="name", type=str, help="name for genome object")
@@ -31,8 +31,8 @@ parser.add_argument("--proteinModel", metavar="substModel", type=str, default="W
 parser.add_argument("--analyzeCodons", action='store_true', help="set this flag to analyze codons")
 parser.add_argument("--analyzeProteins", action='store_true', help="set this flag to analyze proteins")
 #parser.add_argument("--analyzeBoth", action='store_true', help="set this flag to analyze both codons and proteins")
-parser.add_argument("--raxmlNumThreads", metavar="T", type=int, default=1, help="number of threads for raxml [1]")
-parser.add_argument("--runRaxml", action='store_true', help="Deprecated: raxml run by default, use 'deferRaxml' to turn off")
+parser.add_argument("--numThreads", metavar="T", type=int, default=2, help="number of threads for raxml [1]")
+#parser.add_argument("--runRaxml", action='store_true', help="Deprecated: raxml run by default, use 'deferRaxml' to turn off")
 parser.add_argument("--deferRaxml", action='store_true', help="set this flag if you do not want raxml to be run automatically (you can run it manually later using the command file provided)")
 parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="directory for output, create if it does not exist")
 parser.add_argument("--pathToFigtree", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtree -graphic PDF CodonTree.nex CodonTree.pdf")
@@ -47,7 +47,7 @@ genomeIds = []
 with open(args.genomeIdsFile) as F:
     for line in F:
         m = re.match(r"(\d+\.\d+)", line)
-	if m:
+        if m:
             genomeIds.append(m.group(1))
 if args.debugMode:
     sys.stderr.write("got %d genomeIds\n%s\n"%(len(genomeIds), "\t".join(genomeIds)))
@@ -59,7 +59,7 @@ if args.outgroupIdsFile:
     with open(args.outgroupIdsFile) as F:
         for line in F:
             m = re.match(r"(\d+\.\d+)", line)
-	    if m:
+            if m:
                 outgroupIds.append(m.group(1))
 if args.debugMode:
     sys.stderr.write("got % outgroupIds\n%s\n"%(len(outgroupIds), "\t".join(outgroupIds)))
@@ -274,7 +274,7 @@ if args.analyzeProteins and args.analyzeCodons:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
         PartitionFile.write("%s, proteins = %d-%d\n"%(args.proteinModel, codonPositions+1, codonPositions+proteinPositions))
-    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.raxmlNumThreads)]
+    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.numThreads)]
 
 elif args.analyzeCodons:
     phyloFileBase += "_codonAlignment"
@@ -282,12 +282,12 @@ elif args.analyzeCodons:
     with open(args.outputDirectory+phyloFileBase+".partitions", 'w') as PartitionFile:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
-    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.raxmlNumThreads)]
+    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.numThreads)]
 
 elif args.analyzeProteins:
     phyloFileBase += "_proteinAlignment"
     phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, args.outputDirectory+phyloFileBase+".phy")
-    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(args.rateModel, args.proteinModel), "-p", "12345", "-T", str(args.raxmlNumThreads)]
+    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(args.rateModel, args.proteinModel), "-p", "12345", "-T", str(args.numThreads)]
 raxmlCommand.extend(["-e", "1.0"]) # limit on precision, faster than default 0.1
 
 if args.bootstrapReps > 0:
@@ -325,14 +325,11 @@ if not args.deferRaxml:
     # test to see if we can write a figtree nexus file
     #
     # We find the template file figtree.nex in the same directory
-    # as our library code. However first try the legacy location.
+    # as our library code.
     #
-    pathToInstall = os.path.abspath(os.path.dirname(sys.argv[0]))        
-    if not os.path.exists(pathToInstall+"/figtree.nex"):
-        pathToInstall = os.path.dirname(inspect.getfile(phylocode))
-
-    if os.path.exists(pathToInstall+"/figtree.nex"):
-        figtreeParams = phylocode.readFigtreeParameters(pathToInstall+"/figtree.nex")
+    nexus_template_file = os.path.join(Codon_trees_lib_path, "figtree.nex")
+    if os.path.exists(nexus_template_file):
+        figtreeParams = phylocode.readFigtreeParameters(nexus_template_file)
         nexusOutfileName = args.outputDirectory+phyloFileBase+".figtree.nex"
         nexusOut = open(nexusOutfileName, "w")
         phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=args.focusGenome)
