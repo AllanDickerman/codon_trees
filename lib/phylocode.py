@@ -13,6 +13,7 @@ from collections import defaultdict
 import patric_api
 
 debug = False #shared across functions defined here
+LOG = sys.stderr
 
 def selectSingleCopyPgfams(genomeGenePgfamList, genomeIdList, requiredGenome=None, maxGenomesMissing=0, maxAllowedDups=0):
     # given a list of genome_ids, gene_ids, and pgfam_ids
@@ -150,7 +151,7 @@ def trimEndGaps(alignment, trimThreshold=0.5):
     trimmableNumberOfGaps = int(trimThreshold * len(alignment)) # number of sequences with gaps allowed
     if trimmableNumberOfGaps == 0:
         if debug:
-            sys.stderr.write("trimEndGaps: trimThreshold (%.2f) so lenient no trimming possible with %d sequences\n"%(trimThreshold, len(alignment)))
+            LOG.write("trimEndGaps: trimThreshold (%.2f) so lenient no trimming possible with %d sequences\n"%(trimThreshold, len(alignment)))
         #alignment.annotation["endgaps_trimmed"] = (0,0)
         return(alignment)
     leadGaps={}
@@ -206,7 +207,7 @@ def resolveDuplicatesPerPatricGenome(alignment):
         seqIds.append(record.id)
         # assume PATRIC gene identifier like this: fig|1399771.3.peg.1094
         genomeId = ".".join(record.id.split(".")[:2]).split("|")[1]
-        #sys.stderr.write("%s\t%s\n"%(record.id, genomeId))
+        #LOG.write("%s\t%s\n"%(record.id, genomeId))
         if genomeId not in seqsPerGenome:
             seqsPerGenome[genomeId] = []
         else:
@@ -231,7 +232,7 @@ def resolveDuplicatesPerPatricGenome(alignment):
                 seqIds.remove(seqId)
     if len(seqIds) < initialNumRecords:
         if debug:
-            sys.stderr.write("after resolveDups num seqIds is %d, versus prev %d\n"%(len(seqIds), initialNumRecords))
+            LOG.write("after resolveDups num seqIds is %d, versus prev %d\n"%(len(seqIds), initialNumRecords))
         reducedSeqs = []
         for record in alignment:
             if record.id in seqIds:
@@ -282,7 +283,7 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
         if len(dnaSeqs[i].seq) < protLen*3:
             shortfall = (protLen*3) - len(dnaSeqs[i].seq)
             if debug:
-                sys.stderr.write("DNA seq for %s is too short for protein, shortfall = %d\n"%(protRec.id, shortfall))
+                LOG.write("DNA seq for %s is too short for protein, shortfall = %d\n"%(protRec.id, shortfall))
             # extend on both ends to be safe
             dnaSeqs[i].seq = "N"*shortfall + dnaSeqs[i].seq + "N"*shortfall
     """
@@ -295,7 +296,7 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
                 dnaSeq.annotations = proteinRecord.annotations.copy()
 
     except Exception as e:
-        sys.stderr.write("problem in codonalign, skipping\n%s\n"%str(e))
+        LOG.write("problem in codonalign, skipping\n%s\n"%str(e))
         #raise
     return returnValue
     
@@ -372,7 +373,7 @@ def writeConcatenatedAlignmentsPhylip(alignments, destination):
 def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
     if type(destination) == str:
         if debug:
-            sys.stderr.write("outputCodonsProteinsPhylip opening file %s\n"%destination)
+            LOG.write("outputCodonsProteinsPhylip opening file %s\n"%destination)
         destination = open(destination, "w")
     codonPositions = 0
     taxonSet=set()

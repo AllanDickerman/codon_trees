@@ -13,6 +13,7 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 debug = False #shared across functions defined here
+LOG = sys.stderr
 base_url="https://www.patricbrc.org/api/"
 
 session = requests.Session()
@@ -27,7 +28,7 @@ def getGenomeIdsNamesByName(name, limit='10'):
     query += "&limit(%s)"%limit
     ret = session.get(base_url+"genome/", params=query, headers={"accept":"text/tsv"})
     if debug:
-        sys.stderr.write(ret.url+"\n")
+        LOG.write(ret.url+"\n")
     return(ret.text.replace('"', ''))
 
 def getGenomeGroupIds(genomeGroupName):
@@ -44,11 +45,11 @@ def getGenomeGroupIds(genomeGroupName):
     headers = {"accept":"text/tsv"}
     headers["Authorization"] = authorization
     if debug:
-        sys.stderr.write("requesting group %s for user %s\n"%(genomeGroupName, userAtPatric))
-        sys.stderr.write("query =  %s\n"%(query))
+        LOG.write("requesting group %s for user %s\n"%(genomeGroupName, userAtPatric))
+        LOG.write("query =  %s\n"%(query))
     ret = requests.get(base_url+"genome/", params=query, headers=headers)
     if debug:
-        sys.stderr.write(ret.url+"\n")
+        LOG.write(ret.url+"\n")
     return(ret.text.replace('"', '').split("\n"))[1:-1]
 
 def getNamesForGenomeIds(genomeIdList):
@@ -58,8 +59,8 @@ def getGenomeIdsByFieldValue(queryField, queryValue):
     req = requests.get(base_url+"genome/", params="in(%s,%s)"%(queryField, queryValue)) 
     retval = []
     if debug:
-        sys.stderr.write("getGenomeIdsByQuery: "+req.url+"\n")
-        sys.stderr.write(req.text+"\n")
+        LOG.write("getGenomeIdsByQuery: "+req.url+"\n")
+        LOG.write(req.text+"\n")
     for line in req.text.split("\n"):
        retval.append(line)
     return retval
@@ -76,8 +77,8 @@ def getDataForGenomes(genomeIdList, fieldNames):
     #pretty_print_POST(prepared)
     response=session.send(prepared, verify=False)
     if not response.ok:
-        sys.stderr.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, req.url, len(query)))
-        sys.stderr.write("url="+req.url+"\nquery="+query+"\n")
+        LOG.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, req.url, len(query)))
+        LOG.write("url="+req.url+"\nquery="+query+"\n")
         errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, req.url, len(query))
         raise Exception(errorMessage)
     data = response.text.replace('"','') #get rid of quotes
@@ -106,13 +107,13 @@ def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
 
     response=session.send(prepared, verify=False)
     if not response.ok:
-        sys.stderr.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query)))
-        sys.stderr.write("query="+req.url+"\n")
+        LOG.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query)))
+        LOG.write("query="+req.url+"\n")
         errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query))
         raise Exception(errorMessage)
     if not response.ok:
-        sys.stderr.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query)))
-        sys.stderr.write("query="+req.url+"\n")
+        LOG.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query)))
+        LOG.write("query="+req.url+"\n")
         errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query))
         raise Exception(errorMessage)
     data = response.text.replace('"','')
@@ -121,7 +122,7 @@ def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
     for row in rows[:-1]: # last line is empty (because of terminal line return)
         fields = row.split("\t")
         if len(fields) != len(fieldNames):
-            sys.stderr.write("getGenomeFeaturesByPatricIds: parsed fields (%d) is fewer than requested fields (%d):\n%s\n"%(len(fields), len(fieldNames), row))
+            LOG.write("getGenomeFeaturesByPatricIds: parsed fields (%d) is fewer than requested fields (%d):\n%s\n"%(len(fields), len(fieldNames), row))
             continue
         retval.append(fields)
     return(retval)
@@ -129,12 +130,12 @@ def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
 def getProteinBioSeqRecordsForPatricIds(patricIdList):
     data = getGenomeFeaturesByPatricIds(patricIdList, ["patric_id", "product", "genome_id", "aa_sequence"])
     #if debug:
-        #sys.stderr.write("getProteinBioSeqRecordsForPatricIds, about to parse:\n%s\n"%data)
-        #sys.stderr.write("num rows = %d\n"%len(rows))
+        #LOG.write("getProteinBioSeqRecordsForPatricIds, about to parse:\n%s\n"%data)
+        #LOG.write("num rows = %d\n"%len(rows))
     retval = [] # will be list of Bio.SeqRecord
     for row in data[1:]: # first row is headers
         if len(row) < 4:
-            sys.stderr.write("problem in getProteinBioSeqRecordsForPatricIds, expected 4 fields and got %d: %s\n"%(len(row), "|".join(row)))
+            LOG.write("problem in getProteinBioSeqRecordsForPatricIds, expected 4 fields and got %d: %s\n"%(len(row), "|".join(row)))
             continue
         patricId, product, genomeId, aa_sequence = row
         simpleSeq = Seq(aa_sequence, IUPAC.extended_protein)
@@ -146,13 +147,13 @@ def getProteinBioSeqRecordsForPatricIds(patricIdList):
 def getDnaBioSeqRecordsForPatricIds(patricIdList):
     data = getGenomeFeaturesByPatricIds(patricIdList, ["patric_id", "product", "genome_id", "na_sequence"])
     #if debug:
-     #   sys.stderr.write("getDnaBioSeqRecordsForPatricIds, first two rows of data:\n")
-     #   sys.stderr.write(rows[0]+"\n")
-     #   sys.stderr.write(rows[1]+"\n")
+     #   LOG.write("getDnaBioSeqRecordsForPatricIds, first two rows of data:\n")
+     #   LOG.write(rows[0]+"\n")
+     #   LOG.write(rows[1]+"\n")
     retval = []
     for fields in data[1:]: #first row is headers
         if len(fields) < 4:
-            sys.stderr.write("problem in getDnaBioSeqRecordsForPatricIds, expected 4 fields and got %d: %s\n"%(len(fields), "|".join(fields)))
+            LOG.write("problem in getDnaBioSeqRecordsForPatricIds, expected 4 fields and got %d: %s\n"%(len(fields), "|".join(fields)))
             continue
         patricId, product, genomeId, na_sequence = fields[:4]
         simpleSeq = Seq(na_sequence, IUPAC.ambiguous_dna)
@@ -173,10 +174,10 @@ def getPatricGenesPgfamsForGenomeList(genomeIdList):
         query += "&select(genome_id,patric_id,pgfam_id)"
         query += "&limit(10000)"
         if debug:
-            sys.stderr.write("getPatricGenesPgfamsForGenomeList: about to request genes and pgfams for genome ids:\n%s\n%s\n"%(base_url, query))
+            LOG.write("getPatricGenesPgfamsForGenomeList: about to request genes and pgfams for genome ids:\n%s\n%s\n"%(base_url, query))
         req = requests.get(base_url+"genome_feature/", params=query) #, 
         if debug:
-            sys.stderr.write(req.url+"\n")
+            LOG.write(req.url+"\n")
         for line in req.text.split("\n"):
             line = line.replace('"','')
             row = line.split(",")
@@ -263,10 +264,10 @@ def getPatricGenesForGenomeList(genomeIdList):
         query += "&select(genome_id,patric_id,pgfam_id)"
         query += "&limit(10000)"
         if debug:
-            sys.stderr.write("getPatricGenesPgfamsForGenomeList: about to request genes and pgfams for genome ids:\n%s\n%s\n"%(base_url, query))
+            LOG.write("getPatricGenesPgfamsForGenomeList: about to request genes and pgfams for genome ids:\n%s\n%s\n"%(base_url, query))
         req = requests.get(base_url+"genome_feature/", params=query) #, 
         if debug:
-            sys.stderr.write(req.url+"\n")
+            LOG.write(req.url+"\n")
         for line in req.text.split("\n"):
             line = line.replace('"','')
             row = line.split(",")
