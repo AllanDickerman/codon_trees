@@ -37,42 +37,70 @@ Have raxml and muscle on the $PATH (you can specify an alternate name for raxml,
 
 Usage
 -----
-usage: buildTreeModular.py [-h] [--outgroupIdsFile file] [--maxGenes #]
-                           [--bootstrapReps #] [--maxGenomesMissing #]
-                           [--minPropPresent proportion]
-                           [--maxAllowedDups maxDups]
-                           [--endGapTrimThreshold maxPropGaps]
-                           [--raxmlExecutable program_name]
-                           [--rateModel model] [--proteinModel model]
-                           [--analyzeCodons] [--analyzeProteins]
-                           [--analyzeBot] [--raxmlNumThreads T] [--runRaxml]
-                           [--debugMode]
-                           genomeIdsFile
+usage: p3x-build-codon-tree.py [-h] [--genomeObjectFile file]
+                               [--outgroupIdsFile file] [--maxGenes #]
+                               [--bootstrapReps #] [--maxGenomesMissing #]
+                               [--maxAllowedDups maxDups]
+                               [--endGapTrimThreshold maxPropGaps]
+                               [--raxmlExecutable program_name]
+                               [--rateModel rateModel]
+                               [--proteinModel substModel] [--analyzeCodons]
+                               [--analyzeProteins] [--numThreads T]
+                               [--deferRaxml] [--outputDirectory out_dir]
+                               [--pathToFigtree jar_file]
+                               [--focusGenome genome_id] [--debugMode]
+                               genomeIdsFile
 
-positional arguments:  
-  genomeIdsFile (PATRIC genome ids, one per line, subsequent content on each line ignored)  
+positional arguments:
+  genomeIdsFile         file with PATRIC genome IDs, one per line, optional
+                        content after tab delimiter ignored
 
-optional arguments:  
-  -h, --help            show this help message and exit  
-  --outgroupIdsFile file  
-                        ougroup genome ids, one per line (or first column of TSV)    
-  --maxGenes #          maximum number of genes in concatenated alignment [50]  
-  --bootstrapReps #     number of raxml 'fast boostrap' replicates [0]  
-  --maxGenomesMissing # maximum number of ingroup genomes missing a member of any homolog group  
+optional arguments:
+  -h, --help            show this help message and exit
+  --genomeObjectFile file
+                        genome object (json file) to be added to ingroup
+                        (default: None)
+  --outgroupIdsFile file
+                        ougroup genome ids, one per line (or first column of
+                        TSV) (default: None)
+  --maxGenes #          number of genes in concatenated alignment (default:
+                        50)
+  --bootstrapReps #     number of raxml 'fast boostrap' replicates (default:
+                        0)
+  --maxGenomesMissing #
+                        ingroup genomes allowed to lack a member of any
+                        homolog group (default: 0)
   --maxAllowedDups maxDups
-                        maximum duplicated gene occurrences within ingroup genomes for homolog to be included [0]  
+                        duplicated gene occurrences allowed within homolog
+                        group (default: 0)
   --endGapTrimThreshold maxPropGaps
-                        stringency of end-gap trimming, lower for less trimming [0.5]  
+                        stringency of end-gap trimming, lower for less
+                        trimming (default: 0.5)
   --raxmlExecutable program_name
-                        name of program to call (possibly with path)[raxml]  
-  --rateModel model     variable rate category model CAT|GAMMA [CAT]  
-  --proteinModel model  raxml protein substitution model LG|WAG|JTT [WAG]  
-  --analyzeCodons       set this flag to analyze just codons, omitting proteins  
-  --analyzeProteins     set this flag to analyze proteins, omitting codons  
-  --raxmlNumThreads T   number of threads for raxml [1]  
-  --runRaxml            set this flag if you want to run raxml (you can run it manually later using the command file provided)  
-  --debugMode           turns on progress output to stderr  
-                        
+                        program to call, possibly with path (default: raxml)
+  --rateModel rateModel
+                        variable rate category model CAT|GAMMA (default: CAT)
+  --proteinModel substModel
+                        raxml protein substitution model (default: WAGF)
+  --analyzeCodons       analyze only codons (ignore amino acids) (default:
+                        False)
+  --analyzeProteins     analyze only amino acids (default: False)
+  --numThreads T        number of threads for raxml (default: 2)
+  --deferRaxml          set this flag if you do not want raxml to be run
+                        automatically (you can run it manually later using the
+                        command file provided) (default: False)
+  --outputDirectory out_dir
+                        directory for output, create if it does not exist
+                        (default: None)
+  --pathToFigtree jar_file
+                        specify this to generate PDF graphic: java -jar
+                        pathToFigtree -graphic PDF CodonTree.nex CodonTree.pdf
+                        (default: None)
+  --focusGenome genome_id
+                        genome to be highlighted in color in Figtree (default:
+                        None)
+  --debugMode           turns on more progress output to log file (default:
+                        False)
 
 Input
 -----
