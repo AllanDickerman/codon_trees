@@ -359,8 +359,8 @@ if not args.deferRaxml:
         LOG.flush()
         #shutil.copy2(nexusOutfileName, args.outputDirectory+"CodonTree.nex")
         if not args.pathToFigtreeJar:
-            if os.path.exists(os.path.join(Codon_tree_lib_path, "figtree.jar")):
-                args.pathToFigtreeJar = os.path.join(Codon_tree_lib_path, "figtree.jar")
+            if os.path.exists(os.path.join(Codon_trees_lib_path, "figtree.jar")):
+                args.pathToFigtreeJar = os.path.join(Codon_trees_lib_path, "figtree.jar")
         if args.debugMode:
             LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
         if os.path.exists(args.pathToFigtreeJar):
