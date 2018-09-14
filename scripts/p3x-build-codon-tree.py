@@ -125,17 +125,17 @@ genomeObject_genomeId=None
 genomeObject_name=None
 if args.genomeObjectFile:
     #try:
-        genomeObject = json.load(open(args.genomeObjectFile))
-        genomeObjectGenePgfams = patric_api.getPatricGenesPgfamsForGenomeObject(genomeObject)
-        genomeGenePgfamList.extend(genomeObjectGenePgfams)
-        genomeObject_genomeId = genomeObject['id']
-        genomeObject_name = genomeObject['scientific_name']
-        genomeIds.append(genomeObject_genomeId)
-        args.focusGenome = genomeObject_genomeId
-        LOG.write("parsed json file %s, got PGFam genes=%d, total now is %d\n"%(args.genomeObjectFile, len(genomeObjectGenePgfams), len(genomeGenePgfamList)))
+    genomeObject = json.load(open(args.genomeObjectFile))
+    genomeObjectGenePgfams = patric_api.getPatricGenesPgfamsForGenomeObject(genomeObject)
+    genomeGenePgfamList.extend(genomeObjectGenePgfams)
+    genomeObject_genomeId = genomeObject['id']
+    genomeObject_name = genomeObject['scientific_name']
+    genomeIds.append(genomeObject_genomeId)
+    args.focusGenome = genomeObject_genomeId
+    LOG.write("parsed json file %s, got PGFam genes=%d, total now is %d\n"%(args.genomeObjectFile, len(genomeObjectGenePgfams), len(genomeGenePgfamList)))
     LOG.flush()
     #except Exception as e:
-        #LOG.write("Problem reading genome object json file.\n%s\n"%str(e))
+    #LOG.write("Problem reading genome object json file.\n%s\n"%str(e))
 
 # add outgroup genes+pgfams to list, get dynamically as the outgroup might change from run to run
 if len(outgroupIds):
