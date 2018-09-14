@@ -30,7 +30,7 @@ parser.add_argument("--rateModel", metavar="rateModel", type=str, choices = ['CA
 parser.add_argument("--proteinModel", metavar="substModel", type=str, default="WAGF", help="raxml protein substitution model")
 parser.add_argument("--analyzeCodons", action='store_true', help="analyze only codons (ignore amino acids)")
 parser.add_argument("--analyzeProteins", action='store_true', help="analyze only amino acids")
-parser.add_argument("--numThreads", metavar="T", type=int, default=2, help="number of threads for raxml")
+parser.add_argument("--threads", metavar="T", type=int, default=2, help="number of threads for raxml")
 #parser.add_argument("--runRaxml", action='store_true', help="Deprecated: raxml run by default, use 'deferRaxml' to turn off")
 parser.add_argument("--deferRaxml", action='store_true', help="set this flag if you do not want raxml to be run automatically (you can run it manually later using the command file provided)")
 parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="directory for output, create if it does not exist")
@@ -293,7 +293,7 @@ if args.analyzeProteins and args.analyzeCodons:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
         PartitionFile.write("%s, proteins = %d-%d\n"%(args.proteinModel, codonPositions+1, codonPositions+proteinPositions))
-    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.numThreads)]
+    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
 
 elif args.analyzeCodons:
     phyloFileBase += "_codonAlignment"
@@ -301,12 +301,12 @@ elif args.analyzeCodons:
     with open(args.outputDirectory+phyloFileBase+".partitions", 'w') as PartitionFile:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
-    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.numThreads)]
+    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
 
 elif args.analyzeProteins:
     phyloFileBase += "_proteinAlignment"
     phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, args.outputDirectory+phyloFileBase+".phy")
-    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(args.rateModel, args.proteinModel), "-p", "12345", "-T", str(args.numThreads)]
+    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(args.rateModel, args.proteinModel), "-p", "12345", "-T", str(args.threads)]
 raxmlCommand.extend(["-e", "1.0"]) # limit on precision, faster than default 0.1
 
 if args.bootstrapReps > 0:
@@ -359,7 +359,7 @@ if not args.deferRaxml:
         LOG.flush()
         #shutil.copy2(nexusOutfileName, args.outputDirectory+"CodonTree.nex")
         if not args.pathToFigtreeJar:
-            if exists(os.path.join(Codon_tree_lib_path, "figtree.jar")):
+            if os.path.exists(os.path.join(Codon_tree_lib_path, "figtree.jar")):
                 args.pathToFigtreeJar = os.path.join(Codon_tree_lib_path, "figtree.jar")
         if args.debugMode:
             LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
