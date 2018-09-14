@@ -33,7 +33,7 @@ parser.add_argument("--analyzeProteins", action='store_true', help="analyze only
 parser.add_argument("--threads", metavar="T", type=int, default=2, help="number of threads for raxml")
 #parser.add_argument("--runRaxml", action='store_true', help="Deprecated: raxml run by default, use 'deferRaxml' to turn off")
 parser.add_argument("--deferRaxml", action='store_true', help="set this flag if you do not want raxml to be run automatically (you can run it manually later using the command file provided)")
-parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="directory for output, create if it does not exist")
+parser.add_argument("--outputDirectory", type=str, default=".", metavar="out_dir", help="directory for output, create if it does not exist")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtreeJar -graphic PDF CodonTree.nex CodonTree.pdf")
 parser.add_argument("--focusGenome", metavar="genome_id", type=str, help="genome to be highlighted in color in Figtree")
 parser.add_argument("--debugMode", action='store_true', help="turns on more progress output to log file")
