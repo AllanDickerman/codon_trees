@@ -20,7 +20,11 @@ session = requests.Session()
 if os.environ.has_key("KB_AUTH_TOKEN"):
     session.headers.update({ 'Authorization' : os.environ.get('KB_AUTH_TOKEN') })
     print(session.headers)
-
+elif os.path.exists(os.path.join(os.environ.get('HOME'), ".patric_token")):
+    F = open(os.path.join(os.environ.get('HOME'), ".patric_token"))
+    session.headers.update({ 'Authorization' : F.read() })
+    F.close()
+    print(session.headers)
 
 def getGenomeIdsNamesByName(name, limit='10'):
     query = "eq(genome_name,%s)"%name
@@ -162,22 +166,53 @@ def getDnaBioSeqRecordsForPatricIds(patricIdList):
         retval.append(seqRecord)
     return(retval)
 
+def getAllProteinsForGenomeId(genomeId):
+    query="in(genome_id,("+genomeId+"))"
+    fieldNames = ["patric_id", "product", "genome_name", "genome_id", "aa_sequence"]
+    query += "&select(%s)"%",".join(fieldNames)
+    query += "&limit(%d)"%10000
+    headers={"Content-Type": "application/rqlquery+x-www-form-urlencoded", "accept":"text/tsv"}
+    req = requests.Request('POST', base_url+"genome_feature/", headers=headers, data=query)
+    prepared = req.prepare()
+
+    response=session.send(prepared, verify=False)
+    if not response.ok:
+        LOG.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query)))
+        LOG.write("query="+req.url+"\n")
+        errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query))
+        raise Exception(errorMessage)
+    if not response.ok:
+        LOG.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query)))
+        LOG.write("query="+req.url+"\n")
+        errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, base_url, len(query))
+        raise Exception(errorMessage)
+    data = response.text.replace('"','')
+    rows = data.split("\n")
+    retval = []
+    for row in rows[:-1]: # last line is empty (because of terminal line return)
+        fields = row.split("\t")
+        if len(fields) != len(fieldNames):
+            LOG.write("getGenomeFeaturesByPatricIds: parsed fields (%d) is fewer than requested fields (%d):\n%s\n"%(len(fields), len(fieldNames), row))
+        retval.append(fields)
+    return(retval)
+
+
 def getPatricGenesPgfamsForGenomeList(genomeIdList):
+    if debug:
+        LOG.write("getPatricGenesPgfamsForGenomeList() called for %d genomes\n"%len(genomeIdList))
     retval = []
     headers={"accept":"text/tsv"}
     # one genome at a time, so using 'get' should be fine
     for genomeId in genomeIdList:
-        query="and(%s,%s,%s)"%("eq(genome_id,(%s))"%genomeId, "eq(feature_type,CDS)", "eq(pgfam_id,PGF*)")
-    # one genome at a time, so using 'get' should be fine
-    for genomeId in genomeIdList:
+        if debug:
+            LOG.write("    request genes and pgfams for genome: %s\n"%genomeId)
         query="and(%s,%s,%s)"%("eq(genome_id,(%s))"%genomeId, "eq(feature_type,CDS)", "eq(pgfam_id,PGF*)")
         query += "&select(genome_id,patric_id,pgfam_id)"
         query += "&limit(10000)"
-        if debug:
-            LOG.write("getPatricGenesPgfamsForGenomeList: about to request genes and pgfams for genome ids:\n%s\n%s\n"%(base_url, query))
         req = requests.get(base_url+"genome_feature/", params=query) #, 
         if debug:
             LOG.write(req.url+"\n")
+        curLen = len(retval)
         for line in req.text.split("\n"):
             line = line.replace('"','')
             row = line.split(",")
@@ -186,6 +221,8 @@ def getPatricGenesPgfamsForGenomeList(genomeIdList):
             if not row[2].startswith("PGF"):
                 continue
             retval.append(row)
+        if debug:
+            LOG.write("    got %d pgfams for that genome\n"%(len(retval)-curLen))
     return(retval)
 
 def getPatricGenesPgfamsForGenomeObject(genomeObject):

@@ -74,7 +74,7 @@ if args.outgroupIdsFile:
             m = re.match(r"(\d+\.\d+)", line)
             if m:
                 outgroupIds.append(m.group(1))
-LOG.write("got % outgroupIds\n%s\n"%(len(outgroupIds), "\t".join(outgroupIds)))
+LOG.write("got %d outgroupIds\n%s\n"%(len(outgroupIds), "\t".join(outgroupIds)))
 LOG.flush()
 
 if len(genomeIds) + len(outgroupIds) < 4:
