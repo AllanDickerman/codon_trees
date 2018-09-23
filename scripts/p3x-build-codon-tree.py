@@ -361,13 +361,15 @@ if not args.deferRaxml:
         if not args.pathToFigtreeJar:
             if os.path.exists(os.path.join(Codon_trees_lib_path, "figtree.jar")):
                 args.pathToFigtreeJar = os.path.join(Codon_trees_lib_path, "figtree.jar")
-        if args.debugMode:
-            LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
-        if os.path.exists(args.pathToFigtreeJar):
-            figtreePdfName = args.outputDirectory+phyloFileBase+".figtree.pdf"
-            LOG.write("run figtree to create tree figure as %s\n"%figtreePdfName)
-            figtreeCommand = ['java',  '-jar', args.pathToFigtreeJar, '-graphic', 'PDF', nexusOutfileName, figtreePdfName]
-            subprocess.Popen(figtreeCommand)
+        if args.pathToFigtreeJar:
+            if args.debugMode:
+                LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
+            if os.path.exists(args.pathToFigtreeJar):
+                figtreePdfName = args.outputDirectory+phyloFileBase+".figtree.pdf"
+                figtreeCommand = ['java',  '-jar', args.pathToFigtreeJar, '-graphic', 'PDF', nexusOutfileName, figtreePdfName]
+                if args.debugMode:
+                    LOG.write("run figtree to create tree figure:\n%s\n"%("\t".join(figtreeCommand)))
+                subprocess.Popen(figtreeCommand)
         
 OUT = open(args.outputDirectory+"CodonTree.stats", 'w')
 OUT.write("Statistics for CodonTree\n")
