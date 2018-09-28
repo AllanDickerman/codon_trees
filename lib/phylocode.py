@@ -120,6 +120,17 @@ def readFigtreeParameters(filename):
                 retval[m.group(1)] = m.group(2)
     return retval
 
+def generateFigtreeImage(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat="PDF"):
+    if debug:
+        LOG.write("generateTreeFigure(%s, %s, %d, %s)\n"%(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat))
+    if imageFormat not in ('PDF', 'SVG', 'PNG', 'JPEG'):
+        raise Exception("imageFormat %s not in ('PDF', 'SVG', 'PNG', 'JPEG')"%imageFormat)
+    figtreeCommand = ['java',  '-jar', figtreeJarFile, '-graphic', imageFormat]
+    if numTaxa > 40:
+        height = 600 + 15 * (numTaxa - 40) # this is an empirical correction factor to avoid taxon name overlap
+        figtreeCommand.extend(['-height', str(int(height))])
+    figtreeCommand.extend([nexusFile, outfileName])
+    subprocess.call(figtreeCommand)
 
 def checkMuscle():
     subprocess.check_call(['which', 'muscle'])

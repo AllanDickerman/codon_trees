@@ -16,7 +16,8 @@ import phylocode
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-parser.add_argument("genomeIdsFile", type=str, help="file with PATRIC genome IDs, one per line, optional content after tab delimiter ignored")
+parser.add_argument("--genomeIdsFile", metavar="file", type=str, help="file with PATRIC genome IDs, one per line, optional content after tab delimiter ignored")
+parser.add_argument("--genomeGroupName", metavar="name", type=str, help="name of user's genome group at PATRIC")
 parser.add_argument("--genomeObjectFile", metavar="file", type=str, help="genome object (json file) to be added to ingroup")
 #parser.add_argument("--genomeObjectName", metavar="name", type=str, help="name for genome object")
 parser.add_argument("--outgroupIdsFile", metavar="file", type=str, help="ougroup genome ids, one per line (or first column of TSV)")
@@ -56,16 +57,23 @@ subprocess.check_call(['which', args.raxmlExecutable])
 phylocode.checkMuscle()
 
 genomeIds = []
-with open(args.genomeIdsFile) as F:
-    for line in F:
-        m = re.match(r"(\d+\.\d+)", line)
-        if m:
-            genomeIds.append(m.group(1))
+if args.genomeIdsFile:
+    with open(args.genomeIdsFile) as F:
+        for line in F:
+            m = re.match(r"(\d+\.\d+)", line)
+            if m:
+                genomeIds.append(m.group(1))
 LOG.write("elapsed seconds = %f\n"%(time()-starttime))
 LOG.write("from %s got %d genomeIds\n%s\n"%(args.genomeIdsFile, len(genomeIds), "\t".join(genomeIds)))
 if args.genomeObjectFile:
     LOG.write("genome object file: %s\n"%args.genomeObjectFile)
 LOG.flush()
+
+if args.genomeGroupName:
+    LOG.write("requesting genome IDs for user group %s\n"%args.genomeGroupName)
+    ids = patric_api.getGenomeGroupIds(args.genomeGroupName)
+    LOG.write("got %d ids for %s\n"%(len(ids), args.genomeGroupName))
+    genomeIds.extend(ids)
 
 outgroupIds = []
 if args.outgroupIdsFile:
@@ -81,7 +89,12 @@ if len(genomeIds) + len(outgroupIds) < 4:
     LOG.write("too few genomeIds to build a tree with: %d"%(len(genomeIds)+len(outgroupIds)))
     sys.exit(1)
 
-fileBase = os.path.basename(args.genomeIdsFile)
+if args.genomeIdsFile:
+    fileBase = os.path.basename(args.genomeIdsFile)
+elif args.genomeGroupName:
+    fileBase = args.genomeGroupName
+else:
+    fileBase = "codon_tree"
 fileBase = re.sub("\..*", "", fileBase)
 
 # if either codons or proteins is specified, analyze just that, otherwise analyze both
@@ -361,15 +374,25 @@ if not args.deferRaxml:
         if not args.pathToFigtreeJar:
             if os.path.exists(os.path.join(Codon_trees_lib_path, "figtree.jar")):
                 args.pathToFigtreeJar = os.path.join(Codon_trees_lib_path, "figtree.jar")
+        if not os.path.exists(args.pathToFigtreeJar):
+            LOG.write("Could not find valid path to figtree.jar")
+            args.pathToFigtreeJar = None
         if args.pathToFigtreeJar:
+            LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
+            LOG.write("write out image file\n")
+            figtreePdfName = args.outputDirectory+phyloFileBase+".figtree.pdf"
             if args.debugMode:
-                LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
-            if os.path.exists(args.pathToFigtreeJar):
-                figtreePdfName = args.outputDirectory+phyloFileBase+".figtree.pdf"
-                figtreeCommand = ['java',  '-jar', args.pathToFigtreeJar, '-graphic', 'PDF', nexusOutfileName, figtreePdfName]
-                if args.debugMode:
-                    LOG.write("run figtree to create tree figure:\n%s\n"%("\t".join(figtreeCommand)))
-                subprocess.Popen(figtreeCommand)
+                LOG.write("run figtree to create tree figure: %s\n"%figtreePdfName)
+            #def generateFigtreeImage(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat="PDF")
+            phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(genomeIds), args.pathToFigtreeJar)
+            if True: # possibly gate this by a parameter
+                # Now write a version of tree with tip labels aligned (shows bootstap support better)
+                figtreeParams['rectilinearLayout.alignTipLabels'] = 'true'
+                nexusOut = open(nexusOutfileName, "w")
+                phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=args.focusGenome)
+                nexusOut.close()
+                figtreePdfName = args.outputDirectory+phyloFileBase+"_figtree_tipLabelsAligned.pdf"
+                phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(genomeIds), args.pathToFigtreeJar)
         
 OUT = open(args.outputDirectory+"CodonTree.stats", 'w')
 OUT.write("Statistics for CodonTree\n")
