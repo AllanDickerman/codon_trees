@@ -1,6 +1,9 @@
 import sys
 import re
 import subprocess
+import warnings
+from Bio import BiopythonExperimentalWarning
+warnings.simplefilter('ignore', BiopythonExperimentalWarning) # importing codonalign raises warnings
 from Bio.Alphabet import IUPAC
 from Bio import AlignIO
 from Bio import SeqIO
@@ -9,10 +12,13 @@ from Bio import codonalign
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.Align import MultipleSeqAlignment
+from Bio import codonalign
 from collections import defaultdict
-from p3_allan import patric_api
+import patric_api
+import StringIO
 
-debug = False #shared across functions defined here
+Debug = False #shared across functions defined here
+LOG = sys.stderr
 
 def selectSingleCopyPgfams(genomeGenePgfamList, genomeIdList, requiredGenome=None, maxGenomesMissing=0, maxAllowedDups=0):
     # given a list of genome_ids, gene_ids, and pgfam_ids
@@ -119,6 +125,17 @@ def readFigtreeParameters(filename):
                 retval[m.group(1)] = m.group(2)
     return retval
 
+def generateFigtreeImage(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat="PDF"):
+    if Debug:
+        LOG.write("generateTreeFigure(%s, %s, %d, %s, %s)\n"%(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat))
+    if imageFormat not in ('PDF', 'SVG', 'PNG', 'JPEG'):
+        raise Exception("imageFormat %s not in ('PDF', 'SVG', 'PNG', 'JPEG')"%imageFormat)
+    figtreeCommand = ['java',  '-jar', figtreeJarFile, '-graphic', imageFormat]
+    if numTaxa > 40:
+        height = 600 + 15 * (numTaxa - 40) # this is an empirical correction factor to avoid taxon name overlap
+        figtreeCommand.extend(['-height', str(int(height))])
+    figtreeCommand.extend([nexusFile, outfileName])
+    subprocess.call(figtreeCommand)
 
 def checkMuscle():
     subprocess.check_call(['which', 'muscle'])
@@ -149,8 +166,8 @@ def trimEndGaps(alignment, trimThreshold=0.5):
         raise Exception("trimEndGaps: trimThreshold (%.2f) out of range 0.0-1.0"%trimThreshold)
     trimmableNumberOfGaps = int(trimThreshold * len(alignment)) # number of sequences with gaps allowed
     if trimmableNumberOfGaps == 0:
-        if debug:
-            sys.stderr.write("trimEndGaps: trimThreshold (%.2f) so lenient no trimming possible with %d sequences\n"%(trimThreshold, len(alignment)))
+        if Debug:
+            LOG.write("trimEndGaps: trimThreshold (%.2f) so lenient no trimming possible with %d sequences\n"%(trimThreshold, len(alignment)))
         #alignment.annotation["endgaps_trimmed"] = (0,0)
         return(alignment)
     leadGaps={}
@@ -206,7 +223,7 @@ def resolveDuplicatesPerPatricGenome(alignment):
         seqIds.append(record.id)
         # assume PATRIC gene identifier like this: fig|1399771.3.peg.1094
         genomeId = ".".join(record.id.split(".")[:2]).split("|")[1]
-        #sys.stderr.write("%s\t%s\n"%(record.id, genomeId))
+        #LOG.write("%s\t%s\n"%(record.id, genomeId))
         if genomeId not in seqsPerGenome:
             seqsPerGenome[genomeId] = []
         else:
@@ -230,8 +247,8 @@ def resolveDuplicatesPerPatricGenome(alignment):
             if not seqId == seqToKeep:
                 seqIds.remove(seqId)
     if len(seqIds) < initialNumRecords:
-        if debug:
-            sys.stderr.write("after resolveDups num seqIds is %d, versus prev %d\n"%(len(seqIds), initialNumRecords))
+        if Debug:
+            LOG.write("after resolveDups num seqIds is %d, versus prev %d\n"%(len(seqIds), initialNumRecords))
         reducedSeqs = []
         for record in alignment:
             if record.id in seqIds:
@@ -243,18 +260,22 @@ def resolveDuplicatesPerPatricGenome(alignment):
 def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
     seqIds=[]
     protSeqDict={}
-    dnaSeqs=[]
     for seqRecord in proteinAlignment:
         seqIds.append(seqRecord.id)
-        if extraDnaSeqs and seqRecord.id in extraDnaSeqs:
-            dnaSeqs.append(extraDnaSeqs[seqRecord.id])
         protSeqDict[seqRecord.id] = seqRecord
-    dnaSeqs.extend(patric_api.getDnaBioSeqRecordsForPatricIds(seqIds))
-    if debug:
-        sys.stdout.write("proteinToCodonAlignment: last DNA seq record before aligning:\n%s"%str(dnaSeqs[-1]))
+    dnaFasta = patric_api.getDnaFastaForPatricIds(seqIds)
+    if Debug:
+        LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
+
+    dnaSeqRecords = list(SeqIO.parse(StringIO.StringIO(dnaFasta), "fasta", alphabet=IUPAC.ambiguous_dna))
+    for seqRecord in proteinAlignment:
+        if extraDnaSeqs and seqRecord.id in extraDnaSeqs:
+            dnaSeqRecords.append(extraDnaSeqs[seqRecord.id])
+    if Debug:
+        LOG.write("proteinToCodonAlignment: last DNA seq record before aligning:\n%s"%str(dnaSeqRecords[-1]))
     missingIds=[]
     allGood = True
-    for seqRecord in dnaSeqs:
+    for seqRecord in dnaSeqRecords:
         if not len(seqRecord.seq):
             allGood = False
             missingIds.append(seqRecord.id)
@@ -266,12 +287,20 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
         proteinAlignment = tempProtAl
     #force to be in same order (necessary?)
     dnaSeqs_ordered = len(seqIds)*[None] #pre-allocate length of array
-    for dnaSeq in dnaSeqs:
+    for dnaSeq in dnaSeqRecords:
         index = seqIds.index(dnaSeq.id)
         dnaSeqs_ordered[index] = dnaSeq
         if len(dnaSeq.seq) < 1:
-            raise Exception("proteinToCodonAlignment: length of sequence %s is %d\n"%(dnaSeq.id, len(dnaSeq.seq)))
-    dnaSeqs = dnaSeqs_ordered
+            message = "proteinToCodonAlignment: length of sequence %s is %d\n"%(dnaSeq.id, len(dnaSeq.seq))
+            LOG.write(message+"\n")
+            LOG.flush()
+            raise Exception(message)
+    dnaSeqRecords = dnaSeqs_ordered
+    if Debug:
+        LOG.write("number of dnaseqs missing = %d\n"%len(missingIds))
+        LOG.write("dna seqs has %d seqs\n"%(len(dnaSeqRecords)))
+        SeqIO.write(dnaSeqRecords[:2], LOG, "fasta")
+        LOG.flush()
    
     """
     # now check length of protein vs dna sequences, extend dna if needed to make match in numbers of codons
@@ -281,21 +310,21 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
         protLen = len(protSeq)
         if len(dnaSeqs[i].seq) < protLen*3:
             shortfall = (protLen*3) - len(dnaSeqs[i].seq)
-            if debug:
-                sys.stderr.write("DNA seq for %s is too short for protein, shortfall = %d\n"%(protRec.id, shortfall))
+            if Debug:
+                LOG.write("DNA seq for %s is too short for protein, shortfall = %d\n"%(protRec.id, shortfall))
             # extend on both ends to be safe
             dnaSeqs[i].seq = "N"*shortfall + dnaSeqs[i].seq + "N"*shortfall
     """
     returnValue = None
     try:
-        returnValue = codonalign.build(proteinAlignment, dnaSeqs, max_score=1000)
+        returnValue = codonalign.build(proteinAlignment, dnaSeqRecords, max_score=1000)
         for dnaSeq in returnValue:
             proteinRecord = protSeqDict[dnaSeq.id]
             if proteinRecord.annotations:
                 dnaSeq.annotations = proteinRecord.annotations.copy()
 
     except Exception as e:
-        sys.stderr.write("problem in codonalign, skipping\n%s\n"%str(e))
+        LOG.write("problem in codonalign, skipping\n%s\n"%str(e))
         #raise
     return returnValue
     
@@ -309,22 +338,6 @@ def relabelSequencesByGenomeId(seqRecordSet):
         if not seqRecord.annotations:
             seqRecord.annotations={}
         seqRecord.annotations['original_id'] = originalId
-
-def generateAlignmentsForCodonsAndProteins(genesForPgfams, proteinAlignments, codonAlignments):
-    for pgfamId in genesForPgfams: #genesForPgfams:
-        proteinSeqRecords = patric_api.getProteinBioSeqRecordsForPatricIds(genesForPgfams[pgfamId])
-        proteinAlignment = alignSeqRecordsMuscle(proteinSeqRecords)
-        proteinAlignment = resolveDuplicatesPerPatricGenome(proteinAlignment)
-        proteinAlignment.sort()
-        codonAlignment = proteinToCodonAlignment(proteinAlignment)
-        if codonAlignment: # if an error happened, we don't do next steps
-            relabelSequencesByGenomeId(codonAlignment)
-            if codonAlignment.get_alignment_length() % 3:
-                raise Exception("codon alignment length not multiple of 3 for %s\n"%pgfamId)
-            codonAlignments[pgfamId] = codonAlignment
-        relabelSequencesByGenomeId(proteinAlignment)
-        proteinAlignments[pgfamId] = proteinAlignment
-    return
 
 def trimAlignments(alignmentDict, endGapTrimThreshold=0.5):
     if endGapTrimThreshold == 0:
@@ -371,8 +384,8 @@ def writeConcatenatedAlignmentsPhylip(alignments, destination):
 
 def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
     if type(destination) == str:
-        if debug:
-            sys.stderr.write("outputCodonsProteinsPhylip opening file %s\n"%destination)
+        if Debug:
+            LOG.write("outputCodonsProteinsPhylip opening file %s\n"%destination)
         destination = open(destination, "w")
     codonPositions = 0
     taxonSet=set()
@@ -400,6 +413,69 @@ def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
     destination.close()
 
     return()
+
+def getPatricGenesPgfamsForGenomeObject(genomeObject):
+# parse a PATRIC genome object (read from json format) for PGFams
+    retval = [] # a list of tupples of (genomeId, Pgfam, geneId)
+    genomeId = genomeObject['id']
+    for feature in genomeObject['features']:
+        if 'family_assignments' in feature:
+            for familyAssignment in feature['family_assignments']:
+                if familyAssignment[0] == 'PGFAM':
+                    retval.append((genomeId, feature['id'], familyAssignment[1]))
+    return retval
+
+def getGenomeObjectProteins(patricIds, genomeObject):
+# return dictionary of patricId -> BioPython.SeqRecord
+    genomeId = genomeObject['id']
+    retval = {}
+    for feature in genomeObject['features']:
+        patricId, product, genomeId, aa_sequence = '', '', '', ''
+        patricId = feature['id']
+        if not patricId in patricIds:
+            continue
+        if "protein_translation" in feature:
+            aa_sequence = feature["protein_translation"]
+        if 'function' in feature:
+            product = feature['function']
+        simpleSeq = Seq(aa_sequence, IUPAC.extended_protein)
+        seqRecord = SeqRecord(simpleSeq, id=patricId, description=product)
+        seqRecord.annotations["genome_id"] = genomeId
+        retval[patricId] = seqRecord
+    return retval
+
+def getGenomeObjectGeneDna(patricIds, genomeObject):
+# return dictionary of patricId -> BioPython.SeqRecord
+    genomeId = genomeObject['id']
+    contigSeq = {}
+    for contig in genomeObject['contigs']:
+        contigSeq[contig['id']] = contig['dna']
+    retval = {} # dict of SeqRecords
+    for feature in genomeObject['features']:
+        if not feature['id'] in patricIds:
+            continue
+        geneId = feature['id']
+        if geneId not in patricIds:
+            continue
+        product = ''
+        if 'product' in feature:
+            product = feature['function']
+        if not 'location' in feature:
+            continue
+        contig, start, ori, length = feature['location'][0] # this should be an array of (contig, start, orientation, length)
+        start = int(float(start))
+        length = int(float(length))
+        if ori == '+':
+            start -= 1
+            simpleSeq = Seq(contigSeq[contig][start:start+length], IUPAC.ambiguous_dna)
+        if ori == '-':
+            simpleSeq = Seq(contigSeq[contig][start-length:start], IUPAC.ambiguous_dna)
+            simpleSeq = simpleSeq.reverse_complement()
+
+        seqRecord = SeqRecord(simpleSeq, id=geneId, description=product)
+        seqRecord.annotations["genome_id"] = genomeId
+        retval[geneId] = seqRecord
+    return retval
 
 
 

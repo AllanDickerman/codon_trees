@@ -1,88 +1,123 @@
 import sys
 import re
 import os.path
-import shutil
 import glob
 import argparse
 import subprocess
 import json
-import inspect
-from Bio import codonalign
-from p3_allan import patric_api
-from p3_allan import phylocode
+import StringIO
+from time import time, localtime, strftime                        
+import patric_api
+import phylocode
+from Bio import SeqIO
+from Bio.Alphabet import IUPAC
 
-parser = argparse.ArgumentParser()
-parser.add_argument("genomeIdsFile", type=str, help="file with PATRIC genome IDs, one per line, optional content after tab delimiter ignored")
+parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument("--genomeIdsFile", metavar="file", type=str, help="file with PATRIC genome IDs, one per line, optional content after tab delimiter ignored")
+parser.add_argument("--genomeGroupName", metavar="name", type=str, help="name of user's genome group at PATRIC")
 parser.add_argument("--genomeObjectFile", metavar="file", type=str, help="genome object (json file) to be added to ingroup")
-#parser.add_argument("--genomeObjectName", metavar="name", type=str, help="name for genome object")
-parser.add_argument("--focusGenome", metavar="genome_id", type=str, help="genome to be highlighted in color in Figtree")
 parser.add_argument("--outgroupIdsFile", metavar="file", type=str, help="ougroup genome ids, one per line (or first column of TSV)")
-parser.add_argument("--maxGenes", metavar="#", type=int, default=50, help="maximum number of genes in concatenated alignment [50]")
-parser.add_argument("--bootstrapReps", metavar="#", type=int, default=0, help="number of raxml 'fast boostrap' replicates [0]")
-parser.add_argument("--maxGenomesMissing", metavar="#", type=int, default=0, help="maximum number of ingroup genomes missing a member of any homolog group")
-parser.add_argument("--maxAllowedDups", metavar="maxDups", type=int, default=0, help="maximum duplicated gene occurrences within ingroup genomes for homolog to be included [0]")
-parser.add_argument("--endGapTrimThreshold", metavar="maxPropGaps", type=float, default=0.5, help="stringency of end-gap trimming, lower for less trimming [0.5]")
-parser.add_argument("--raxmlExecutable", metavar="program_name", type=str, default="raxml", help="name of program to call (possibly with path)[raxml]")
-parser.add_argument("--rateModel", metavar="rateModel", type=str, choices = ['CAT', 'GAMMA'], default="CAT", help="variable rate category model CAT|GAMMA [CAT]")
-parser.add_argument("--proteinModel", metavar="substModel", type=str, default="WAGF", help="raxml protein substitution model [WAGF]")
-parser.add_argument("--analyzeCodons", action='store_true', help="set this flag to analyze codons")
-parser.add_argument("--analyzeProteins", action='store_true', help="set this flag to analyze proteins")
-#parser.add_argument("--analyzeBoth", action='store_true', help="set this flag to analyze both codons and proteins")
-parser.add_argument("--raxmlNumThreads", metavar="T", type=int, default=1, help="number of threads for raxml [1]")
-parser.add_argument("--runRaxml", action='store_true', help="Deprecated: raxml run by default, use 'deferRaxml' to turn off")
+parser.add_argument("--maxGenes", metavar="#", type=int, default=50, help="number of genes in concatenated alignment")
+parser.add_argument("--bootstrapReps", metavar="#", type=int, default=0, help="number of raxml 'fast boostrap' replicates")
+parser.add_argument("--maxGenomesMissing", metavar="#", type=int, default=0, help="ingroup genomes allowed to lack a member of any homolog group")
+parser.add_argument("--maxAllowedDups", metavar="maxDups", type=int, default=0, help="duplicated gene occurrences allowed within homolog group")
+parser.add_argument("--endGapTrimThreshold", metavar="maxPropGaps", type=float, default=0.5, help="stringency of end-gap trimming, lower for less trimming")
+parser.add_argument("--raxmlExecutable", metavar="program_name", type=str, default="raxml", help="program to call, possibly with path")
+parser.add_argument("--rateModel", metavar="rateModel", type=str, choices = ['CAT', 'GAMMA'], default="CAT", help="variable rate category model CAT|GAMMA")
+parser.add_argument("--proteinModel", metavar="substModel", type=str, default="WAGF", help="raxml protein substitution model")
+parser.add_argument("--analyzeCodons", action='store_true', help="analyze only codons (ignore amino acids)")
+parser.add_argument("--analyzeProteins", action='store_true', help="analyze only amino acids")
+parser.add_argument("--threads", metavar="T", type=int, default=2, help="number of threads for raxml")
 parser.add_argument("--deferRaxml", action='store_true', help="set this flag if you do not want raxml to be run automatically (you can run it manually later using the command file provided)")
-parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="directory for output, create if it does not exist")
-parser.add_argument("--pathToFigtree", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtree -graphic PDF CodonTree.nex CodonTree.pdf")
-parser.add_argument("--debugMode", action='store_true', help="turns on progress output to stderr")
+parser.add_argument("--outputDirectory", type=str, default=".", metavar="out_dir", help="directory for output, create if it does not exist")
+parser.add_argument("--pathToFigtreeJar", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtreeJar -graphic PDF CodonTree.nex CodonTree.pdf")
+parser.add_argument("--focusGenome", metavar="genome_id", type=str, help="genome to be highlighted in color in Figtree")
+parser.add_argument("--debugMode", action='store_true', help="turns on more progress output to log file")
 #parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and pgfams from stored file matching genomeIdsFile if it exists")
 args = parser.parse_args()
+starttime = time()
+logfileName = os.path.basename(sys.argv[0])
+logfileName = re.sub("\..*", "", logfileName)
+logfileName += ".log"
+global LOG 
+LOG = open(logfileName, 'w')
+LOG.write("starting %s\n"%sys.argv[0])
+LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(starttime))+"\n")
+LOG.write("args= "+str(args)+"\n\n")
+LOG.flush()
+phylocode.LOG = LOG
+patric_api.LOG = LOG
 
 subprocess.check_call(['which', args.raxmlExecutable])
 phylocode.checkMuscle()
 
 genomeIds = []
-with open(args.genomeIdsFile) as F:
-    for line in F:
-        m = re.match(r"(\d+\.\d+)", line)
-	if m:
-            genomeIds.append(m.group(1))
-if args.debugMode:
-    sys.stderr.write("got %d genomeIds\n%s\n"%(len(genomeIds), "\t".join(genomeIds)))
-    if args.genomeObjectFile:
-        sys.stderr.write("also genome object file: %s\n"%args.genomeObjectFile)
+if args.genomeIdsFile:
+    with open(args.genomeIdsFile) as F:
+        for line in F:
+            m = re.match(r"(\d+\.\d+)", line)
+            if m:
+                genomeIds.append(m.group(1))
+LOG.write("elapsed seconds = %f\n"%(time()-starttime))
+LOG.write("from %s got %d genomeIds\n%s\n"%(args.genomeIdsFile, len(genomeIds), "\t".join(genomeIds)))
+if args.genomeObjectFile:
+    LOG.write("genome object file: %s\n"%args.genomeObjectFile)
+LOG.flush()
+
+if args.genomeGroupName:
+    LOG.write("requesting genome IDs for user group %s\n"%args.genomeGroupName)
+    ids = patric_api.getGenomeGroupIds(args.genomeGroupName)
+    LOG.write("got %d ids for %s\n"%(len(ids), args.genomeGroupName))
+    genomeIds.extend(ids)
 
 outgroupIds = []
 if args.outgroupIdsFile:
     with open(args.outgroupIdsFile) as F:
         for line in F:
             m = re.match(r"(\d+\.\d+)", line)
-	    if m:
+            if m:
                 outgroupIds.append(m.group(1))
-if args.debugMode:
-    sys.stderr.write("got % outgroupIds\n%s\n"%(len(outgroupIds), "\t".join(outgroupIds)))
+LOG.write("got %d outgroupIds\n%s\n"%(len(outgroupIds), "\t".join(outgroupIds)))
+LOG.flush()
 
 if len(genomeIds) + len(outgroupIds) < 4:
-    sys.stderr.write("too few genomeIds to build a tree with: %d"%(len(genomeIds)+len(outgroupIds)))
+    LOG.write("too few genomeIds to build a tree with: %d"%(len(genomeIds)+len(outgroupIds)))
     sys.exit(1)
 
-fileBase = os.path.basename(args.genomeIdsFile)
+if args.genomeIdsFile:
+    fileBase = os.path.basename(args.genomeIdsFile)
+elif args.genomeGroupName:
+    fileBase = args.genomeGroupName
+else:
+    fileBase = "codon_tree"
 fileBase = re.sub("\..*", "", fileBase)
 
 # if either codons or proteins is specified, analyze just that, otherwise analyze both
-if not (args.analyzeCodons or args.analyzeProteins):
+if (args.analyzeCodons or args.analyzeProteins):
+    if args.analyzeCodons:
+        LOG.write("analyzing just codon nucleotides, not proteins\n")
+    else:
+        LOG.write("analyzing just proteins, not nucleotides\n")
+else:
     args.analyzeCodons = args.analyzeProteins = True
+    LOG.write("analyzing both codons and proteins\n")
+LOG.flush()
 
 if not args.outputDirectory:
     args.outputDirectory=fileBase+"_dir/"
 if not args.outputDirectory.endswith("/"):
     args.outputDirectory += "/"
 if os.path.exists(args.outputDirectory):
-    sys.stdout.write("data directory %s exists\n"%args.outputDirectory)
+    LOG.write("data directory %s exists\n"%args.outputDirectory)
 else:
     os.mkdir(args.outputDirectory)
 
-patric_api.debug = args.debugMode
-phylocode.debug = args.debugMode
+if args.debugMode:
+    patric_api.Debug = True
+    phylocode.Debug = True
+    patric_api.LOG = LOG
+    phylocode.LOG = LOG
+
 
 # this is where we gather the list of Pgfam genes for each ingroup genome ID
 genomeGenePgfamList=[]
@@ -102,17 +137,17 @@ genomeObject_genomeId=None
 genomeObject_name=None
 if args.genomeObjectFile:
     #try:
-        genomeObject = json.load(open(args.genomeObjectFile))
-        genomeObjectGenePgfams = patric_api.getPatricGenesPgfamsForGenomeObject(genomeObject)
-        genomeGenePgfamList.extend(genomeObjectGenePgfams)
-        genomeObject_genomeId = genomeObject['id']
-        genomeObject_name = genomeObject['scientific_name']
-        genomeIds.append(genomeObject_genomeId)
-        args.focusGenome = genomeObject_genomeId
-        if args.debugMode:
-            sys.stderr.write("parsed json file %s, got PGFam genes=%d, total now is %d\n"%(args.genomeObjectFile, len(genomeObjectGenePgfams), len(genomeGenePgfamList)))
+    genomeObject = json.load(open(args.genomeObjectFile))
+    genomeObjectGenePgfams = patric_api.getPatricGenesPgfamsForGenomeObject(genomeObject)
+    genomeGenePgfamList.extend(genomeObjectGenePgfams)
+    genomeObject_genomeId = genomeObject['id']
+    genomeObject_name = genomeObject['scientific_name']
+    genomeIds.append(genomeObject_genomeId)
+    args.focusGenome = genomeObject_genomeId
+    LOG.write("parsed json file %s, got PGFam genes=%d, total now is %d\n"%(args.genomeObjectFile, len(genomeObjectGenePgfams), len(genomeGenePgfamList)))
+    LOG.flush()
     #except Exception as e:
-        #sys.stderr.write("Problem reading genome object json file.\n%s\n"%str(e))
+    #LOG.write("Problem reading genome object json file.\n%s\n"%str(e))
 
 # add outgroup genes+pgfams to list, get dynamically as the outgroup might change from run to run
 if len(outgroupIds):
@@ -122,30 +157,28 @@ with open(args.outputDirectory+fileBase+".genomeGenePgfams.txt", 'w') as F:
     for row in genomeGenePgfamList:
         F.write("\t".join(row)+"\n")
 
-if args.debugMode:
-    sys.stderr.write("got genes and pgfams for genomes, len=%d\n"%len(genomeGenePgfamList))
-    for row in genomeGenePgfamList[:1]:
-        sys.stderr.write("\t".join(row)+"\n")
+LOG.write("got genes and pgfams for genomes, len=%d\n"%len(genomeGenePgfamList))
+for row in genomeGenePgfamList[:1]:
+    LOG.write("\t".join(row)+"\n")
+LOG.flush()
 if not len(genomeGenePgfamList):
-    sys.stderr.write("got no genes and pgfams for genomes, exiting\n")
+    LOG.write("got no genes and pgfams for genomes, exiting\n")
     sys.exit(1)
 
-if args.debugMode:
-    sys.stderr.write("allowing %d genomes missing per PGfam of ingroup (out of %d total)\n"%(args.maxGenomesMissing, len(genomeIds)))
+LOG.write("allowing %d genomes missing per PGfam of ingroup (out of %d total)\n"%(args.maxGenomesMissing, len(genomeIds)))
 if args.maxGenomesMissing >= len(genomeIds):
     raise Exception("getSingleCopyPgfams: maxGenomesMissing too large: %d"%args.maxGenomesMissing)
 
 # call to getSingleCopyPgfams uses ingroup taxa, outgroup is not involved in selecting single copy pgfams
 singleCopyPgfams = phylocode.selectSingleCopyPgfams(genomeGenePgfamList, genomeIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
 
-if args.debugMode:
-    sys.stderr.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))
+LOG.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))
 if len(singleCopyPgfams) > args.maxGenes:
     singleCopyPgfams=singleCopyPgfams[0:args.maxGenes]
-    if args.debugMode:
-        sys.stderr.write("\tselecting top single-family genes: %d\n"%len(singleCopyPgfams))
+    LOG.write("\tselecting top single-family genes: %d\n"%len(singleCopyPgfams))
+LOG.flush()
 if not len(singleCopyPgfams):
-    sys.stderr.write("got no single copy pgfams, exiting\n")
+    LOG.write("got no single copy pgfams, exiting\n")
     sys.exit(1)
 with open(args.outputDirectory+fileBase+".singlishCopyPgfams.txt", 'w') as F:
     for pgfam in singleCopyPgfams:
@@ -159,38 +192,48 @@ for pgfam in singleCopyPgfams:
     genesForPgfams[pgfam] = []
 genomeObjectGeneDna={}
 genomeObjectGenes=set()
+geneToGenomeId = {} # to easily get genome id for a gene 
 numGenesAdded=0
 for row in genomeGenePgfamList:
     genome, gene, pgfam = row
     if genome in allGenomeIds and pgfam in genesForPgfams:
+        geneToGenomeId[gene] = genome
         genesForPgfams[pgfam].append(gene)
         if genome == genomeObject_genomeId:
             genomeObjectGenes.add(gene)
         numGenesAdded += 1
 
-if args.debugMode:
-    sys.stderr.write("got %d genes for %d pgfams\n"%(numGenesAdded, len(genesForPgfams)))
-    for pgfamId in singleCopyPgfams: #genesForPgfams:
-        if pgfamId not in genesForPgfams:
-            sys.stderr.write("singleCopy pgfamId %s not in genesForPgfams\n"%pgfamId)
-            continue
+LOG.write("got %d genes for %d pgfams\n"%(numGenesAdded, len(genesForPgfams)))
+LOG.flush()
+for pgfamId in singleCopyPgfams: #genesForPgfams:
+    if pgfamId not in genesForPgfams:
+        LOG.write("singleCopy pgfamId %s not in genesForPgfams\n"%pgfamId)
+        continue
 if genomeObject:
-    genomeObjectProteins = patric_api.getGenomeObjectProteins(genomeObjectGenes, genomeObject)
-    genomeObjectGeneDna = patric_api.getGenomeObjectGeneDna(genomeObjectGenes, genomeObject)
+    genomeObjectProteins = phylocode.getGenomeObjectProteins(genomeObjectGenes, genomeObject)
+    genomeObjectGeneDna = phylocode.getGenomeObjectGeneDna(genomeObjectGenes, genomeObject)
 
 proteinAlignments = {}
 codonAlignments = {}
 alignedTaxa=set()
 #phylocode.generateAlignmentsForCodonsAndProteins(genesForPgfams, proteinAlignments, codonAlignments)
 for pgfamId in genesForPgfams: #genesForPgfams:
-    proteinSeqRecords = patric_api.getProteinBioSeqRecordsForPatricIds(genesForPgfams[pgfamId])
+    proteinFasta = patric_api.getProteinFastaForPatricIds(genesForPgfams[pgfamId])
+    proteinSeqRecords = list(SeqIO.parse(StringIO.StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein))
+    for record in proteinSeqRecords:
+        record.annotations["genome_id"] = geneToGenomeId[record.id]
     if args.genomeObjectFile:
         for geneId in genesForPgfams[pgfamId]:
             if geneId in genomeObjectProteins:
                 proteinSeqRecords.append(genomeObjectProteins[geneId])
+    if args.debugMode:
+        LOG.write("protein set for %s has %d seqs\n"%(pgfamId, len(proteinSeqRecords)))
+        SeqIO.write(proteinSeqRecords[:2], LOG, "fasta")
     proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqRecords)
     proteinAlignment = phylocode.resolveDuplicatesPerPatricGenome(proteinAlignment)
     proteinAlignment.sort()
+    if args.debugMode:
+        LOG.write("alignment for %s has %d seqs\n"%(pgfamId, len(proteinAlignment)))
     try:
         codonAlignment = phylocode.proteinToCodonAlignment(proteinAlignment, genomeObjectGeneDna)
         if codonAlignment: # if an error happened, we don't do next steps
@@ -200,8 +243,11 @@ for pgfamId in genesForPgfams: #genesForPgfams:
             if args.endGapTrimThreshold:
                 codonAlignment = phylocode.trimEndGaps(codonAlignment, args.endGapTrimThreshold)
             codonAlignments[pgfamId] = codonAlignment
+            if args.debugMode:
+                LOG.write("dna alignment for %s has %d seqs\n"%(pgfamId, len(codonAlignment)))
+                SeqIO.write(codonSeqRecords[:2], LOG, "fasta")
     except Exception as e:
-        sys.stderr.write("Exeption aligning codons: %s\n"%str(e))
+        LOG.write("Exeption aligning codons: %s\n"%str(e))
     phylocode.relabelSequencesByGenomeId(proteinAlignment)
     for seqRecord in proteinAlignment:
         alignedTaxa.add(seqRecord.id)
@@ -210,9 +256,10 @@ for pgfamId in genesForPgfams: #genesForPgfams:
     proteinAlignments[pgfamId] = proteinAlignment
 numTaxa=len(alignedTaxa)
 
-sys.stderr.write("protein and codon alignments completed. num prot als = %d, num codon als = %d\n"%(len(proteinAlignments), len(codonAlignments)))
-sys.stderr.write("First prot alignment has %d elements\n"%len(proteinAlignments.values()[0]))
-sys.stderr.write("original_id of first prot: %s\n"%proteinAlignments.values()[0][0].annotations['original_id'])
+LOG.write("protein and codon alignments completed. num prot als = %d, num codon als = %d\n"%(len(proteinAlignments), len(codonAlignments)))
+LOG.write("First prot alignment has %d elements\n"%len(proteinAlignments.values()[0]))
+LOG.write("original_id of first prot: %s\n"%proteinAlignments.values()[0][0].annotations['original_id'])
+LOG.flush()
 
 # generate hopefully uniq output file name base
 phyloFileBase = fileBase+"_%dtaxa"%(numTaxa)
@@ -236,7 +283,7 @@ with open(args.outputDirectory+phyloFileBase+".pgfamsAndGenesIncludedInAlignment
                     originalId = seqRecord.annotations['original_id']
                     F.write("\t"+originalId)
                     if originalId not in genesNotIncluded:
-                        sys.stderr.write("Problem: originalId %s not in genesForPgfams for %s\n"%(originalId, pgfamId))
+                        LOG.write("Problem: originalId %s not in genesForPgfams for %s\n"%(originalId, pgfamId))
                     else:
                         genesNotIncluded.remove(originalId)
                     genesIncluded.add(originalId)
@@ -271,7 +318,7 @@ if args.analyzeProteins and args.analyzeCodons:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
         PartitionFile.write("%s, proteins = %d-%d\n"%(args.proteinModel, codonPositions+1, codonPositions+proteinPositions))
-    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.raxmlNumThreads)]
+    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
 
 elif args.analyzeCodons:
     phyloFileBase += "_codonAlignment"
@@ -279,12 +326,12 @@ elif args.analyzeCodons:
     with open(args.outputDirectory+phyloFileBase+".partitions", 'w') as PartitionFile:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
-    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.raxmlNumThreads)]
+    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
 
 elif args.analyzeProteins:
     phyloFileBase += "_proteinAlignment"
     phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, args.outputDirectory+phyloFileBase+".phy")
-    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(args.rateModel, args.proteinModel), "-p", "12345", "-T", str(args.raxmlNumThreads)]
+    raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(args.rateModel, args.proteinModel), "-p", "12345", "-T", str(args.threads)]
 raxmlCommand.extend(["-e", "1.0"]) # limit on precision, faster than default 0.1
 
 if args.bootstrapReps > 0:
@@ -298,8 +345,8 @@ if not args.deferRaxml:
         os.remove(fl)
     proc = subprocess.Popen(raxmlCommand, cwd=args.outputDirectory)
     proc.wait()
-    if args.debugMode:
-        sys.stderr.write("raxml completed")
+    LOG.write("raxml completed: elapsed seconds = %f\n"%(time()-starttime))
+    LOG.flush()
     genomeIdToName = {}
     for genomeId, genomeName in patric_api.getNamesForGenomeIds(allGenomeIds):
         genomeIdToName[genomeId] = genomeName+" "+genomeId
@@ -316,26 +363,52 @@ if not args.deferRaxml:
     F = open(args.outputDirectory+"CodonTree.nwk", 'w')
     F.write(renamedNewick)
     F.close()
-    if args.debugMode:
-        sys.stderr.write("codonTree output newick file saved to CodonTree.nwk\n")
+    LOG.write("codonTree output newick file saved to CodonTree.nwk\n")
+    LOG.flush()
 
     # test to see if we can write a figtree nexus file
     #
-    # We find the template file figtree.nex in the same directory
-    # as our library code. However first try the legacy location.
+    # Search for the template file figtree.nex in the same directories
+    # as our library code, somewhere in sys.path.
     #
-    pathToInstall = os.path.abspath(os.path.dirname(sys.argv[0]))        
-    if not os.path.exists(pathToInstall+"/figtree.nex"):
-        pathToInstall = os.path.dirname(inspect.getfile(phylocode))
-
-    if os.path.exists(pathToInstall+"/figtree.nex"):
-        figtreeParams = phylocode.readFigtreeParameters(pathToInstall+"/figtree.nex")
+    nexus_template_file = None
+    for dirname in sys.path:
+        if os.path.isfile(os.path.join(dirname, "figtree.nex")):
+            nexus_template_file = os.path.join(dirname, "figtree.nex")
+    if os.path.exists(nexus_template_file):
+        LOG.write("Found figtree template file: %s\n"%nexus_template_file)
+        LOG.flush()
+        figtreeParams = phylocode.readFigtreeParameters(nexus_template_file)
         nexusOutfileName = args.outputDirectory+phyloFileBase+".figtree.nex"
         nexusOut = open(nexusOutfileName, "w")
         phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=args.focusGenome)
         nexusOut.close()
-        sys.stderr.write("nexus file written to %s\n"%nexusOutfileName)
-        shutil.copy2(nexusOutfileName, args.outputDirectory+"CodonTree.nex")
+        LOG.write("nexus file written to %s\n"%nexusOutfileName)
+        LOG.flush()
+        if not args.pathToFigtreeJar:
+            if os.path.exists(os.path.join(Codon_trees_lib_path, "figtree.jar")):
+                args.pathToFigtreeJar = os.path.join(Codon_trees_lib_path, "figtree.jar")
+        if not (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
+            LOG.write("Could not find valid path to figtree.jar")
+            args.pathToFigtreeJar = None
+        if args.pathToFigtreeJar:
+            LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
+            LOG.write("write out image file\n")
+            figtreePdfName = args.outputDirectory+phyloFileBase+".figtree.pdf"
+            if args.debugMode:
+                LOG.write("run figtree to create tree figure: %s\n"%figtreePdfName)
+            #def generateFigtreeImage(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat="PDF")
+            phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(genomeIds), args.pathToFigtreeJar)
+            if True: # possibly gate this by a parameter
+                # Now write a version of tree with tip labels aligned (shows bootstap support better)
+                figtreeParams['rectilinearLayout.alignTipLabels'] = 'true'
+                nexusOut = open(nexusOutfileName, "w")
+                phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=args.focusGenome)
+                nexusOut.close()
+                figtreePdfName = args.outputDirectory+phyloFileBase+"_figtree_tipLabelsAligned.pdf"
+                phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(genomeIds), args.pathToFigtreeJar)
+LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(time()))+"\n")
+LOG.write("Total job duration %d seconds\n"%(time()-starttime))
         
 OUT = open(args.outputDirectory+"CodonTree.stats", 'w')
 OUT.write("Statistics for CodonTree\n")
@@ -346,9 +419,9 @@ OUT.write("Num_CDS_alignments\t%s\n"%len(proteinAlignments))
 OUT.write("Num_aligned_nucleotides\t%s\n"%codonPositions)
 OUT.write("PGFams\t%s\n"%",".join(sorted(proteinAlignments)))
 OUT.write("command_line\t%s\n"%" ".join(raxmlCommand))
+OUT.write("Total job duration %d seconds\n"%(time()-starttime))
 OUT.close()
-if args.pathToFigtree:
-    subprocess.Popen(["java", "-jar", args.pathToFigtree, "-graphic", "PDF", args.outputDirectory+"CodonTree.nex", args.outputDirectory+"CodonTree.pdf"])
-sys.stderr.write("output written to directory %s\n"%args.outputDirectory)
+LOG.write("output written to directory %s\n"%args.outputDirectory)
+LOG.close()
 sys.stdout.write("\n") 
 
