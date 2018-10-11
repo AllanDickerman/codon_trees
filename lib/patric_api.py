@@ -3,18 +3,13 @@ import sys
 import re
 import requests
 import urllib
-from Bio.Alphabet import IUPAC
-from Bio import AlignIO
-from Bio import SeqIO
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 import json
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 Debug = False #shared across functions defined here
 LOG = sys.stderr
-Base_url="https://www.patricbrc.org/api/"
+Base_url="https://beta.patricbrc.org/api/"
 
 Session = requests.Session()
 UserAtPatric = None
@@ -29,7 +24,8 @@ if "authorization" in Session.headers:
     LOG.write("Patric user = %s\n"%UserAtPatric)
 Session.headers.update({ 'accept': "text/tsv" })
 Session.headers.update({ "Content-Type": "application/rqlquery+x-www-form-urlencoded" })
-LOG.write(str(Session.headers)+"\n")
+if Debug:
+    LOG.write(str(Session.headers)+"\n")
 
 def getGenomeIdsNamesByName(name, limit='10'):
     query = "eq(genome_name,%s)"%name
@@ -75,8 +71,10 @@ def getDataForGenomes(genomeIdList, fieldNames):
     query += "&limit(%s)"%len(genomeIdList)
 
     response = Session.get(Base_url+"genome/", params=query)
+    if Debug:
+        LOG.write("getDataForGenomes:\nurl="+response.url+"\nquery="+query+"\n")
     if not response.ok:
-        LOG.write("Error code %d returned by %s in getDataForGenomes\n"%(response.status_code, req.url))
+        LOG.write("Error code %d returned by %s in getDataForGenomes\n"%(response.status_code, response.url))
         LOG.write("length of query was %d\n"%len(query))
         LOG.write("url="+req.url+"\nquery="+query+"\n")
         raise Exception(errorMessage)
@@ -89,13 +87,16 @@ def getDataForGenomes(genomeIdList, fieldNames):
          #   continue
         retval.append(fields)
     return(retval)
-
+"""
+# commented because this will no longer work with solr schema change, need to select my md5
 def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
     query="in(patric_id,("+",".join(map(urllib.quote, patricIdList))+"))"
     if fieldNames:
         query += "&select(%s)"%",".join(fieldNames)
     query += "&limit(%d)"%len(patricIdList)
     response=Session.get(Base_url+"genome_feature/", params=query)
+    if Debug:
+        LOG.write("getGenomeFeaturesByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
     if not response.ok:
         LOG.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\n"%(response.status_code, Base_url))
         LOG.write("length of query was %d\n"%len(query))
@@ -112,67 +113,69 @@ def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
             continue
         retval.append(fields)
     return(retval)
-
-def getProteinBioSeqRecordsForPatricIds(patricIdList):
-    data = getGenomeFeaturesByPatricIds(patricIdList, ["patric_id", "product", "genome_id", "aa_sequence"])
-    #if Debug:
-        #LOG.write("getProteinBioSeqRecordsForPatricIds, about to parse:\n%s\n"%data)
-        #LOG.write("num rows = %d\n"%len(rows))
-    retval = [] # will be list of Bio.SeqRecord
-    for row in data[1:]: # first row is headers
-        if len(row) < 4:
-            LOG.write("problem in getProteinBioSeqRecordsForPatricIds, expected 4 fields and got %d: %s\n"%(len(row), "|".join(row)))
-            continue
-        patricId, product, genomeId, aa_sequence = row
-        simpleSeq = Seq(aa_sequence, IUPAC.extended_protein)
-        seqRecord = SeqRecord(simpleSeq, id=patricId, description=product)
-        seqRecord.annotations["genome_id"] = genomeId
-        retval.append(seqRecord)
-    return(retval) # list of Bio.SeqRecord
-
-def getDnaBioSeqRecordsForPatricIds(patricIdList):
-    data = getGenomeFeaturesByPatricIds(patricIdList, ["patric_id", "product", "genome_id", "na_sequence"])
-    #if Debug:
-     #   LOG.write("getDnaBioSeqRecordsForPatricIds, first two rows of data:\n")
-     #   LOG.write(rows[0]+"\n")
-     #   LOG.write(rows[1]+"\n")
-    retval = []
-    for fields in data[1:]: #first row is headers
-        if len(fields) < 4:
-            LOG.write("problem in getDnaBioSeqRecordsForPatricIds, expected 4 fields and got %d: %s\n"%(len(fields), "|".join(fields)))
-            continue
-        patricId, product, genomeId, na_sequence = fields[:4]
-        simpleSeq = Seq(na_sequence, IUPAC.ambiguous_dna)
-        seqRecord = SeqRecord(simpleSeq, id=patricId, description=product)
-        seqRecord.annotations["genome_id"] = genomeId
-        retval.append(seqRecord)
-    return(retval)
-
-def getAllProteinsForGenomeId(genomeId):
-    query="in(genome_id,("+genomeId+"))"
-    fieldNames = ["patric_id", "product", "genome_name", "genome_id", "aa_sequence"]
-    query += "&select(%s)"%",".join(fieldNames)
-    query += "&limit(%d)"%10000
-    """
-    req = requests.Request('POST', Base_url+"genome_feature/", data=query)
-    prepared = Session.prepare_request(req) #req.prepare()
-    response=Session.send(prepared, verify=False)
-    """
-    response = Session.get(Base_url+"genome_feature/", params=query) #, 
+"""
+def getProteinFastaForPatricIds(patricIdList):
+    query="in(patric_id,("+",".join(map(urllib.quote, patricIdList))+"))"
+    query += "&limit(%d)"%len(patricIdList)
+    response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/protein+fasta'})
+    if Debug:
+        LOG.write("getProteinFastaForByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
     if not response.ok:
-        LOG.write("Error code %d returned by %s in getAllProteinsForGenomeId\nlength of query was %d\n"%(response.status_code, Base_url, len(query)))
-        LOG.write("query="+req.url+"\n")
-        errorMessage= "Error code %d returned by %s\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
+        LOG.write("Error code %d returned by %s in getProteinFastaForPatricIds\n"%(response.status_code, Base_url))
+        errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
+        LOG.write(errorMessage)
+        LOG.flush()
         raise Exception(errorMessage)
-    rows = response.text.split("\n")
-    retval = []
-    for row in rows[:-1]: # last line is empty (because of terminal line return)
-        fields = row.replace('"', '').split("\t")
-        if len(fields) != len(fieldNames):
-            LOG.write("getGenomeFeaturesByPatricIds: parsed fields (%d) is fewer than requested fields (%d):\n%s\n"%(len(fields), len(fieldNames), row))
-        retval.append(fields)
-    return(retval)
-
+    idsFixedFasta=""
+    for line in response.text.split("\n"):
+        if line.startswith(">"):
+            parts = line.split("|")
+            if len(parts) > 2:
+                line = "|".join(parts[:2])
+        idsFixedFasta += line+"\n"
+    return idsFixedFasta
+    
+def getDnaFastaForPatricIds(patricIdList):
+    query="in(patric_id,("+",".join(map(urllib.quote, patricIdList))+"))"
+    query += "&limit(%d)"%len(patricIdList)
+    response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/dna+fasta'})
+    if Debug:
+        LOG.write("getDnaFastaForByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
+    if not response.ok:
+        LOG.write("Error code %d returned by %s in getDnaFastaForPatricIds\n"%(response.status_code, Base_url))
+        errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
+        LOG.write(errorMessage)
+        LOG.flush()
+        raise Exception(errorMessage)
+    idsFixedFasta=""
+    for line in response.text.split("\n"):
+        if line.startswith(">"):
+            parts = line.split("|")
+            if len(parts) > 2:
+                line = "|".join(parts[:2])
+        idsFixedFasta += line+"\n"
+    return idsFixedFasta
+    
+def getProteinsFastaForGenomeId(genomeId):
+    query="in(genome_id,("+genomeId+"))"
+    query += "&limit(25000)"
+    response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/protein+fasta'})
+    if Debug:
+        LOG.write("getProteinsFastaForGenomeId:\nurl="+response.url+"\nquery="+query+"\n")
+    if not response.ok:
+        LOG.write("Error code %d returned by %s in getProteinsFastaForGenomeId\n"%(response.status_code, Base_url))
+        errorMessage= "Error code %d returned by %s in getProteinsFastaForGenomeId\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
+        LOG.write(errorMessage)
+        LOG.flush()
+        raise Exception(errorMessage)
+    idsFixedFasta=""
+    for line in response.text.split("\n"):
+        if line.startswith(">"):
+            parts = line.split("|")
+            if len(parts) > 2:
+                line = "|".join(parts[:2])+"\n"
+        idsFixedFasta += line
+    return idsFixedFasta
 
 def getPatricGenesPgfamsForGenomeList(genomeIdList):
     if Debug:
@@ -205,68 +208,3 @@ def getPatricGenesPgfamsForGenomeList(genomeIdList):
         if Debug:
             LOG.write("    got %d pgfams for that genome\n"%(len(retval)-curLen))
     return(retval)
-
-def getPatricGenesPgfamsForGenomeObject(genomeObject):
-# parse a PATRIC genome object (read from json format) for PGFams
-    retval = [] # a list of tupples of (genomeId, Pgfam, geneId)
-    genomeId = genomeObject['id']
-    for feature in genomeObject['features']:
-        if 'family_assignments' in feature:
-            for familyAssignment in feature['family_assignments']:
-                if familyAssignment[0] == 'PGFAM':
-                    retval.append((genomeId, feature['id'], familyAssignment[1]))
-    return retval
-
-def getGenomeObjectProteins(patricIds, genomeObject):
-# return dictionary of patricId -> BioPython.SeqRecord
-    genomeId = genomeObject['id']
-    retval = {}
-    for feature in genomeObject['features']:
-        patricId, product, genomeId, aa_sequence = '', '', '', ''
-        patricId = feature['id']
-        if not patricId in patricIds:
-            continue
-        if "protein_translation" in feature:
-            aa_sequence = feature["protein_translation"]
-        if 'function' in feature:
-            product = feature['function']
-        simpleSeq = Seq(aa_sequence, IUPAC.extended_protein)
-        seqRecord = SeqRecord(simpleSeq, id=patricId, description=product)
-        seqRecord.annotations["genome_id"] = genomeId
-        retval[patricId] = seqRecord
-    return retval
-
-def getGenomeObjectGeneDna(patricIds, genomeObject):
-# return dictionary of patricId -> BioPython.SeqRecord
-    genomeId = genomeObject['id']
-    contigSeq = {}
-    for contig in genomeObject['contigs']:
-        contigSeq[contig['id']] = contig['dna']
-    retval = {} # dict of SeqRecords
-    for feature in genomeObject['features']:
-        if not feature['id'] in patricIds:
-            continue
-        geneId = feature['id']
-        if geneId not in patricIds:
-            continue
-        product = ''
-        if 'product' in feature:
-            product = feature['function']
-        if not 'location' in feature:
-            continue
-        contig, start, ori, length = feature['location'][0] # this should be an array of (contig, start, orientation, length)
-        start = int(float(start))
-        length = int(float(length))
-        if ori == '+':
-            start -= 1
-            simpleSeq = Seq(contigSeq[contig][start:start+length], IUPAC.ambiguous_dna)
-        if ori == '-':
-            simpleSeq = Seq(contigSeq[contig][start-length:start], IUPAC.ambiguous_dna)
-            simpleSeq = simpleSeq.reverse_complement()
-
-        seqRecord = SeqRecord(simpleSeq, id=geneId, description=product)
-        seqRecord.annotations["genome_id"] = genomeId
-        retval[geneId] = seqRecord
-    return retval
-
-
