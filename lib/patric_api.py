@@ -9,7 +9,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 Debug = False #shared across functions defined here
 LOG = sys.stderr
-Base_url="https://beta.patricbrc.org/api/"
+Base_url="https://www.patricbrc.org/api/"
 
 Session = requests.Session()
 UserAtPatric = None
