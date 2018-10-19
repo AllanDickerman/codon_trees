@@ -385,9 +385,6 @@ if not args.deferRaxml:
         nexusOut.close()
         LOG.write("nexus file written to %s\n"%nexusOutfileName)
         LOG.flush()
-        if not args.pathToFigtreeJar:
-            if os.path.exists(os.path.join(Codon_trees_lib_path, "figtree.jar")):
-                args.pathToFigtreeJar = os.path.join(Codon_trees_lib_path, "figtree.jar")
         if not (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
             LOG.write("Could not find valid path to figtree.jar")
             args.pathToFigtreeJar = None
