@@ -138,7 +138,7 @@ genomeObject_name=None
 if args.genomeObjectFile:
     #try:
     genomeObject = json.load(open(args.genomeObjectFile))
-    genomeObjectGenePgfams = patric_api.getPatricGenesPgfamsForGenomeObject(genomeObject)
+    genomeObjectGenePgfams = phylocode.getPatricGenesPgfamsForGenomeObject(genomeObject)
     genomeGenePgfamList.extend(genomeObjectGenePgfams)
     genomeObject_genomeId = genomeObject['id']
     genomeObject_name = genomeObject['scientific_name']
