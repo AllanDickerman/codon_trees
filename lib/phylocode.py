@@ -383,6 +383,9 @@ def writeConcatenatedAlignmentsPhylip(alignments, destination):
         writeOneAlignmentPhylip(alignments[alignmentId], destination, taxonIdList, outputIds=False)
 
 def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
+    if len(codonAlignments) == 0:
+        LOG.write("outputCodonsProteinsPhylip() called with zero codonAlignments()\n")
+        return
     if type(destination) == str:
         if Debug:
             LOG.write("outputCodonsProteinsPhylip opening file %s\n"%destination)
