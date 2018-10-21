@@ -36,9 +36,19 @@ parser.add_argument("--debugMode", action='store_true', help="turns on more prog
 #parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and pgfams from stored file matching genomeIdsFile if it exists")
 args = parser.parse_args()
 starttime = time()
+
+if not args.outputDirectory:
+    args.outputDirectory=fileBase+"_dir/"
+if not args.outputDirectory.endswith("/"):
+    args.outputDirectory += "/"
+if not os.path.exists(args.outputDirectory):
+    os.makedirs(args.outputDirectory)
+
 logfileName = os.path.basename(sys.argv[0])
 logfileName = re.sub("\..*", "", logfileName)
 logfileName += ".log"
+logfileName = os.path.join(args.outputDirectory, logfileName)
+
 global LOG 
 LOG = open(logfileName, 'w')
 LOG.write("starting %s\n"%sys.argv[0])
@@ -102,15 +112,6 @@ else:
     args.analyzeCodons = args.analyzeProteins = True
     LOG.write("analyzing both codons and proteins\n")
 LOG.flush()
-
-if not args.outputDirectory:
-    args.outputDirectory=fileBase+"_dir/"
-if not args.outputDirectory.endswith("/"):
-    args.outputDirectory += "/"
-if os.path.exists(args.outputDirectory):
-    LOG.write("data directory %s exists\n"%args.outputDirectory)
-else:
-    os.mkdir(args.outputDirectory)
 
 if args.debugMode:
     patric_api.Debug = True
@@ -386,7 +387,7 @@ if not args.deferRaxml:
         LOG.write("nexus file written to %s\n"%nexusOutfileName)
         LOG.flush()
         if not (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
-            LOG.write("Could not find valid path to figtree.jar")
+            LOG.write("Could not find valid path to figtree.jar\n")
             args.pathToFigtreeJar = None
         if args.pathToFigtreeJar:
             LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
@@ -394,7 +395,6 @@ if not args.deferRaxml:
             figtreePdfName = args.outputDirectory+phyloFileBase+".figtree.pdf"
             if args.debugMode:
                 LOG.write("run figtree to create tree figure: %s\n"%figtreePdfName)
-            #def generateFigtreeImage(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat="PDF")
             phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(genomeIds), args.pathToFigtreeJar)
             if True: # possibly gate this by a parameter
                 # Now write a version of tree with tip labels aligned (shows bootstap support better)
