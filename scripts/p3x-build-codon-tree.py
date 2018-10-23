@@ -61,15 +61,15 @@ patric_api.LOG = LOG
 subprocess.check_call(['which', args.raxmlExecutable])
 phylocode.checkMuscle()
 
-genomeIds = []
+ingroupIds = set() # keep unique
 if args.genomeIdsFile:
     with open(args.genomeIdsFile) as F:
         for line in F:
             m = re.match(r"(\d+\.\d+)", line)
             if m:
-                genomeIds.append(m.group(1))
+                ingroupIds.add(m.group(1))
 LOG.write("elapsed seconds = %f\n"%(time()-starttime))
-LOG.write("from %s got %d genomeIds\n%s\n"%(args.genomeIdsFile, len(genomeIds), "\t".join(genomeIds)))
+LOG.write("from %s got %d ingroupIds\n%s\n"%(args.genomeIdsFile, len(ingroupIds), "\t".join(ingroupIds)))
 if args.genomeObjectFile:
     LOG.write("genome object file: %s\n"%args.genomeObjectFile)
 LOG.flush()
@@ -78,29 +78,30 @@ if args.genomeGroupName:
     LOG.write("requesting genome IDs for user group %s\n"%args.genomeGroupName)
     ids = patric_api.getGenomeGroupIds(args.genomeGroupName)
     LOG.write("got %d ids for %s\n"%(len(ids), args.genomeGroupName))
-    genomeIds.extend(ids)
+    ingroupIds.update(set(ids))
 
-outgroupIds = []
+outgroupIds = set()
 if args.outgroupIdsFile:
     with open(args.outgroupIdsFile) as F:
         for line in F:
             m = re.match(r"(\d+\.\d+)", line)
             if m:
-                outgroupIds.append(m.group(1))
+                outgroupIds.add(m.group(1))
 LOG.write("got %d outgroupIds\n%s\n"%(len(outgroupIds), "\t".join(outgroupIds)))
 LOG.flush()
 
-if len(genomeIds) + len(outgroupIds) < 4:
-    LOG.write("too few genomeIds to build a tree with: %d"%(len(genomeIds)+len(outgroupIds)))
+if len(ingroupIds) + len(outgroupIds) < 4:
+    LOG.write("too few genomes to build a tree with: %d"%(len(ingroupIds)+len(outgroupIds)))
     sys.exit(1)
 
+# figure out a base name for ouput files
 if args.genomeIdsFile:
     fileBase = os.path.basename(args.genomeIdsFile)
+    fileBase = re.sub("\..*", "", fileBase)
 elif args.genomeGroupName:
     fileBase = args.genomeGroupName
 else:
     fileBase = "codon_tree"
-fileBase = re.sub("\..*", "", fileBase)
 
 # if either codons or proteins is specified, analyze just that, otherwise analyze both
 if (args.analyzeCodons or args.analyzeProteins):
@@ -116,8 +117,8 @@ LOG.flush()
 if args.debugMode:
     patric_api.Debug = True
     phylocode.Debug = True
-    patric_api.LOG = LOG
-    phylocode.LOG = LOG
+patric_api.LOG = LOG
+phylocode.LOG = LOG
 
 
 # this is where we gather the list of Pgfam genes for each ingroup genome ID
@@ -131,7 +132,7 @@ if False and args.genomeGenePgfamsFile: # reserve for future use (convenient for
             if len(row) == 3:
                 genomeGenePgfamList.append(row)
 else:
-    genomeGenePgfamList = patric_api.getPatricGenesPgfamsForGenomeList(genomeIds)
+    genomeGenePgfamList = patric_api.getPatricGenesPgfamsForGenomeSet(ingroupIds)
 
 genomeObject=None
 genomeObject_genomeId=None
@@ -143,7 +144,7 @@ if args.genomeObjectFile:
     genomeGenePgfamList.extend(genomeObjectGenePgfams)
     genomeObject_genomeId = genomeObject['id']
     genomeObject_name = genomeObject['scientific_name']
-    genomeIds.append(genomeObject_genomeId)
+    ingroupIds.add(genomeObject_genomeId)
     args.focusGenome = genomeObject_genomeId
     LOG.write("parsed json file %s, got PGFam genes=%d, total now is %d\n"%(args.genomeObjectFile, len(genomeObjectGenePgfams), len(genomeGenePgfamList)))
     LOG.flush()
@@ -152,7 +153,7 @@ if args.genomeObjectFile:
 
 # add outgroup genes+pgfams to list, get dynamically as the outgroup might change from run to run
 if len(outgroupIds):
-    genomeGenePgfamList.extend(patric_api.getPatricGenesPgfamsForGenomeList(outgroupIds))
+    genomeGenePgfamList.extend(patric_api.getPatricGenesPgfamsForGenomeSet(outgroupIds))
 
 with open(args.outputDirectory+fileBase+".genomeGenePgfams.txt", 'w') as F:
     for row in genomeGenePgfamList:
@@ -166,12 +167,12 @@ if not len(genomeGenePgfamList):
     LOG.write("got no genes and pgfams for genomes, exiting\n")
     sys.exit(1)
 
-LOG.write("allowing %d genomes missing per PGfam of ingroup (out of %d total)\n"%(args.maxGenomesMissing, len(genomeIds)))
-if args.maxGenomesMissing >= len(genomeIds):
+LOG.write("allowing %d genomes missing per PGfam of ingroup (out of %d total)\n"%(args.maxGenomesMissing, len(ingroupIds)))
+if args.maxGenomesMissing >= len(ingroupIds)-4:
     raise Exception("getSingleCopyPgfams: maxGenomesMissing too large: %d"%args.maxGenomesMissing)
 
 # call to getSingleCopyPgfams uses ingroup taxa, outgroup is not involved in selecting single copy pgfams
-singleCopyPgfams = phylocode.selectSingleCopyPgfams(genomeGenePgfamList, genomeIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
+singleCopyPgfams = phylocode.selectSingleCopyPgfams(genomeGenePgfamList, ingroupIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
 
 LOG.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))
 if len(singleCopyPgfams) > args.maxGenes:
@@ -185,12 +186,12 @@ with open(args.outputDirectory+fileBase+".singlishCopyPgfams.txt", 'w') as F:
     for pgfam in singleCopyPgfams:
         F.write(pgfam+"\n")
 
-allGenomeIds = genomeIds
-allGenomeIds.extend(outgroupIds)
+allGenomeIds = ingroupIds
+allGenomeIds.update(outgroupIds)
 #genesForPgfams = phylocode.getGenesForPgfams(genomeGenePgfamList, allGenomeIds, singleCopyPgfams)
 genesForPgfams={}
 for pgfam in singleCopyPgfams:
-    genesForPgfams[pgfam] = []
+    genesForPgfams[pgfam] = set()
 genomeObjectGeneDna={}
 genomeObjectGenes=set()
 geneToGenomeId = {} # to easily get genome id for a gene 
@@ -199,7 +200,7 @@ for row in genomeGenePgfamList:
     genome, gene, pgfam = row
     if genome in allGenomeIds and pgfam in genesForPgfams:
         geneToGenomeId[gene] = genome
-        genesForPgfams[pgfam].append(gene)
+        genesForPgfams[pgfam].add(gene)
         if genome == genomeObject_genomeId:
             genomeObjectGenes.add(gene)
         numGenesAdded += 1
@@ -395,7 +396,7 @@ if not args.deferRaxml:
             figtreePdfName = args.outputDirectory+phyloFileBase+".figtree.pdf"
             if args.debugMode:
                 LOG.write("run figtree to create tree figure: %s\n"%figtreePdfName)
-            phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(genomeIds), args.pathToFigtreeJar)
+            phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(ingroupIds), args.pathToFigtreeJar)
             if True: # possibly gate this by a parameter
                 # Now write a version of tree with tip labels aligned (shows bootstap support better)
                 figtreeParams['rectilinearLayout.alignTipLabels'] = 'true'
@@ -403,7 +404,7 @@ if not args.deferRaxml:
                 phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=args.focusGenome)
                 nexusOut.close()
                 figtreePdfName = args.outputDirectory+phyloFileBase+"_figtree_tipLabelsAligned.pdf"
-                phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(genomeIds), args.pathToFigtreeJar)
+                phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(ingroupIds), args.pathToFigtreeJar)
 LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(time()))+"\n")
 LOG.write("Total job duration %d seconds\n"%(time()-starttime))
         
