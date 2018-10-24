@@ -368,43 +368,42 @@ if not args.deferRaxml:
     LOG.write("codonTree output newick file saved to CodonTree.nwk\n")
     LOG.flush()
 
-    # test to see if we can write a figtree nexus file
-    #
     # Search for the template file figtree.nex in the same directories
     # as our library code, somewhere in sys.path.
-    #
     nexus_template_file = None
     for dirname in sys.path:
         if os.path.isfile(os.path.join(dirname, "figtree.nex")):
             nexus_template_file = os.path.join(dirname, "figtree.nex")
     if os.path.exists(nexus_template_file):
-        LOG.write("Found figtree template file: %s\n"%nexus_template_file)
-        LOG.flush()
         figtreeParams = phylocode.readFigtreeParameters(nexus_template_file)
-        nexusOutfileName = args.outputDirectory+phyloFileBase+".figtree.nex"
-        nexusOut = open(nexusOutfileName, "w")
-        phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=args.focusGenome)
-        nexusOut.close()
-        LOG.write("nexus file written to %s\n"%nexusOutfileName)
+        LOG.write("Found figtree template file: %s\n"%nexus_template_file)
+    else:
+        figtreeParams = {}
+        LOG.write("Could not find valid template nexus file.\n")
         LOG.flush()
-        if not (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
-            LOG.write("Could not find valid path to figtree.jar\n")
-            args.pathToFigtreeJar = None
-        if args.pathToFigtreeJar:
+    nexusOutfileBase = os.path.join(args.outputDirectory, phyloFileBase+"_figtree")
+    nexusFilesWritten = phylocode.generateNexusFile(originalNewick, nexusOutfileBase, nexus_template = nexus_template_file, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
+    LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
+
+    #nexusOut = open(nexusOutfileName, "w")
+    #phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=args.focusGenome)
+    #nexusOut.close()
+    #LOG.write("nexus file written to %s\n"%nexusOutfileName)
+    #LOG.flush()
+    if not (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
+        LOG.write("Could not find valid path to figtree.jar\n")
+        args.pathToFigtreeJar = None
+    if args.pathToFigtreeJar:
+        if os.path.exists(args.pathToFigtreeJar):
             LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
-            LOG.write("write out image file\n")
-            figtreePdfName = args.outputDirectory+phyloFileBase+".figtree.pdf"
-            if args.debugMode:
-                LOG.write("run figtree to create tree figure: %s\n"%figtreePdfName)
-            phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(ingroupIds), args.pathToFigtreeJar)
-            if True: # possibly gate this by a parameter
-                # Now write a version of tree with tip labels aligned (shows bootstap support better)
-                figtreeParams['rectilinearLayout.alignTipLabels'] = 'true'
-                nexusOut = open(nexusOutfileName, "w")
-                phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=args.focusGenome)
-                nexusOut.close()
-                figtreePdfName = args.outputDirectory+phyloFileBase+"_figtree_tipLabelsAligned.pdf"
-                phylocode.generateFigtreeImage(nexusOutfileName, figtreePdfName, len(ingroupIds), args.pathToFigtreeJar)
+            for nexusFile in nexusFilesWritten:
+                figtreePdfName = re.sub(".nex", ".pdf", nexusFile)
+                phylocode.generateFigtreeImage(nexusFile, figtreePdfName, len(allGenomeIds), args.pathToFigtreeJar)
+                LOG.write("created figtree figure: %s\n"%figtreePdfName)
+        else:
+            message = "specified figtree.jar does not exist: %s\n"%args.pathToFigtreeJar
+            LOG.write(message)
+
 LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(time()))+"\n")
 LOG.write("Total job duration %d seconds\n"%(time()-starttime))
         
