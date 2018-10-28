@@ -381,7 +381,7 @@ if not args.deferRaxml:
         figtreeParams = {}
         LOG.write("Could not find valid template nexus file.\n")
         LOG.flush()
-    nexusOutfileBase = os.path.join(args.outputDirectory, phyloFileBase+"_figtree")
+    nexusOutfileBase = os.path.join(args.outputDirectory, "CodonTree")
     nexusFilesWritten = phylocode.generateNexusFile(originalNewick, nexusOutfileBase, nexus_template = nexus_template_file, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
     LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
 
