@@ -1,6 +1,7 @@
 import sys
 import re
 import subprocess
+import os.path
 import warnings
 from Bio import BiopythonExperimentalWarning
 warnings.simplefilter('ignore', BiopythonExperimentalWarning) # importing codonalign raises warnings
@@ -124,6 +125,38 @@ def readFigtreeParameters(filename):
             if m:
                 retval[m.group(1)] = m.group(2)
     return retval
+
+def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "both", focus_genome = None, genomeIdToName=None):
+    figtreeParams={}
+    if not nexus_template:
+        for dirname in sys.path: # should be in .../codon_trees/lib
+            if os.path.isfile(os.path.join(dirname, "figtree.nex")):
+                nexus_template_file = os.path.join(dirname, "figtree.nex")
+    # read a model figtree nexus file
+    if os.path.exists(nexus_template):
+        LOG.write("Found figtree template file: %s\n"%nexus_template)
+        LOG.flush()
+        figtreeParams = readFigtreeParameters(nexus_template)
+    genomeIds = re.findall("[(,]([^(,):]+)[,:)]", newick)
+    if not genomeIdToName:
+        genomeIdToName = {}
+    for genomeId, genomeName in patric_api.getNamesForGenomeIds(genomeIds):
+        if genomeId not in genomeIdToName:
+            genomeIdToName[genomeId] = genomeName+" "+genomeId
+    filesWritten=[]
+    if align_tips in ("no", "both"):
+        figtreeParams['rectilinearLayout.alignTipLabels'] = 'false'
+        nexusOut = open(outfileBase+".nex", "w")
+        writeTranslatedNexusTree(nexusOut, newick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=focus_genome)
+        nexusOut.close()
+        filesWritten.append(outfileBase+".nex")
+    if align_tips in ("yes", "both"):
+        figtreeParams['rectilinearLayout.alignTipLabels'] = 'true'
+        nexusOut = open(outfileBase+"_tipsAligned.nex", "w")
+        writeTranslatedNexusTree(nexusOut, newick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=focus_genome)
+        nexusOut.close()
+        filesWritten.append(outfileBase+"_tipsAligned.nex")
+    return filesWritten
 
 def generateFigtreeImage(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat="PDF"):
     if Debug:
