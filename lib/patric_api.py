@@ -114,9 +114,9 @@ def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
         retval.append(fields)
     return(retval)
 """
-def getProteinFastaForPatricIds(patricIdList):
-    query="in(patric_id,("+",".join(map(urllib.quote, patricIdList))+"))"
-    query += "&limit(%d)"%len(patricIdList)
+def getProteinFastaForPatricIds(patricIds):
+    query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
+    query += "&limit(%d)"%len(patricIds)
     response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/protein+fasta'})
     if Debug:
         LOG.write("getProteinFastaForByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
@@ -135,9 +135,9 @@ def getProteinFastaForPatricIds(patricIdList):
         idsFixedFasta += line+"\n"
     return idsFixedFasta
     
-def getDnaFastaForPatricIds(patricIdList):
-    query="in(patric_id,("+",".join(map(urllib.quote, patricIdList))+"))"
-    query += "&limit(%d)"%len(patricIdList)
+def getDnaFastaForPatricIds(patricIds):
+    query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
+    query += "&limit(%d)"%len(patricIds)
     response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/dna+fasta'})
     if Debug:
         LOG.write("getDnaFastaForByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")

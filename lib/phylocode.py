@@ -291,47 +291,36 @@ def resolveDuplicatesPerPatricGenome(alignment):
     return alignment
 
 def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
-    seqIds=[]
-    protSeqDict={}
+    proteinSeqIds = set()
     for seqRecord in proteinAlignment:
-        seqIds.append(seqRecord.id)
-        protSeqDict[seqRecord.id] = seqRecord
-    dnaFasta = patric_api.getDnaFastaForPatricIds(seqIds)
+        proteinSeqIds.add(seqRecord.id)
+    dnaFasta = patric_api.getDnaFastaForPatricIds(proteinSeqIds)
     if Debug:
         LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
 
-    dnaSeqRecords = list(SeqIO.parse(StringIO.StringIO(dnaFasta), "fasta", alphabet=IUPAC.ambiguous_dna))
-    for seqRecord in proteinAlignment:
-        if extraDnaSeqs and seqRecord.id in extraDnaSeqs:
-            dnaSeqRecords.append(extraDnaSeqs[seqRecord.id])
-    if Debug:
-        LOG.write("proteinToCodonAlignment: last DNA seq record before aligning:\n%s"%str(dnaSeqRecords[-1]))
-    missingIds=[]
+    dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO.StringIO(dnaFasta), "fasta", alphabet=IUPAC.ambiguous_dna))
+    for seqId in proteinSeqIds:
+        if extraDnaSeqs and seqId in extraDnaSeqs:
+            dnaSeqDict[seqId] = extraDnaSeqs[seqId]
+            if Debug:
+                LOG.write("appending extra DNA seq %s\n"%seqId)
+    dnaSeqIds=set(dnaSeqDict.keys())
+    if dnaSeqIds != proteinSeqIds:
+        raise Exception("Protein and DNA sets differ:\nProteins: %s\nDNA: %s\n"%(", ".join(sorted(proteinSeqIds)), ", ".join(sorted(dnaSeqIds))))
     allGood = True
-    for seqRecord in dnaSeqRecords:
-        if not len(seqRecord.seq):
+    for seqId in dnaSeqDict:
+        if not len(dnaSeqDict[seqId].seq):
             allGood = False
-            missingIds.append(seqRecord.id)
-    if not allGood:
-        tempProtAl = []
-        for seqRecord in proteinAlignment:
-            if seqRecord.id not in missingIds:
-                tempProtAl.append(seqRecord)
-        proteinAlignment = tempProtAl
-    #force to be in same order (necessary?)
-    dnaSeqs_ordered = len(seqIds)*[None] #pre-allocate length of array
-    for dnaSeq in dnaSeqRecords:
-        index = seqIds.index(dnaSeq.id)
-        dnaSeqs_ordered[index] = dnaSeq
-        if len(dnaSeq.seq) < 1:
-            message = "proteinToCodonAlignment: length of sequence %s is %d\n"%(dnaSeq.id, len(dnaSeq.seq))
-            LOG.write(message+"\n")
-            LOG.flush()
-            raise Exception(message)
-    dnaSeqRecords = dnaSeqs_ordered
+            #del(dnaSeqDict[seqId])
+            LOG.write("warning: seqId %s length of dna was zero\n"%seqId)
+    dnaSeqRecords=[]
+    for proteinSeq in proteinAlignment:
+        dnaSeqRecords.append(dnaSeqDict[proteinSeq.id])
+
     if Debug:
-        LOG.write("number of dnaseqs missing = %d\n"%len(missingIds))
         LOG.write("dna seqs has %d seqs\n"%(len(dnaSeqRecords)))
+        LOG.write("DNA seq ids: %s\n"%(", ".join(sorted(dnaSeqIds))))
+        LOG.write("pro seq ids: %s\n"%(", ".join(sorted(proteinSeqIds))))
         SeqIO.write(dnaSeqRecords[:2], LOG, "fasta")
         LOG.flush()
    
