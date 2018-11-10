@@ -51,8 +51,8 @@ def getGenomeGroupIds(genomeGroupName):
         LOG.write(ret.url+"\n")
     return(ret.text.replace('"', '').split("\n"))[1:-1]
 
-def getNamesForGenomeIds(genomeIdList):
-    return getDataForGenomes(genomeIdList, ["genome_id", "genome_name"])
+def getNamesForGenomeIds(genomeIdSet):
+    return getDataForGenomes(genomeIdSet, ["genome_id", "genome_name"])
 
 def getGenomeIdsByFieldValue(queryField, queryValue):
     req = sesssion.get(Base_url+"genome/", params="in(%s,%s)"%(queryField, queryValue)) 
@@ -64,11 +64,11 @@ def getGenomeIdsByFieldValue(queryField, queryValue):
        retval.append(line)
     return retval
 
-def getDataForGenomes(genomeIdList, fieldNames):
-    query = "in(genome_id,(%s))"%",".join(genomeIdList)
+def getDataForGenomes(genomeIdSet, fieldNames):
+    query = "in(genome_id,(%s))"%",".join(genomeIdSet)
     if fieldNames:
         query += "&select(%s)"%",".join(fieldNames)
-    query += "&limit(%s)"%len(genomeIdList)
+    query += "&limit(%s)"%len(genomeIdSet)
 
     response = Session.get(Base_url+"genome/", params=query)
     if Debug:
@@ -114,9 +114,9 @@ def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
         retval.append(fields)
     return(retval)
 """
-def getProteinFastaForPatricIds(patricIdList):
-    query="in(patric_id,("+",".join(map(urllib.quote, patricIdList))+"))"
-    query += "&limit(%d)"%len(patricIdList)
+def getProteinFastaForPatricIds(patricIds):
+    query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
+    query += "&limit(%d)"%len(patricIds)
     response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/protein+fasta'})
     if Debug:
         LOG.write("getProteinFastaForByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
@@ -135,9 +135,9 @@ def getProteinFastaForPatricIds(patricIdList):
         idsFixedFasta += line+"\n"
     return idsFixedFasta
     
-def getDnaFastaForPatricIds(patricIdList):
-    query="in(patric_id,("+",".join(map(urllib.quote, patricIdList))+"))"
-    query += "&limit(%d)"%len(patricIdList)
+def getDnaFastaForPatricIds(patricIds):
+    query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
+    query += "&limit(%d)"%len(patricIds)
     response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/dna+fasta'})
     if Debug:
         LOG.write("getDnaFastaForByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
@@ -177,13 +177,13 @@ def getProteinsFastaForGenomeId(genomeId):
         idsFixedFasta += line
     return idsFixedFasta
 
-def getPatricGenesPgfamsForGenomeList(genomeIdList):
+def getPatricGenesPgfamsForGenomeSet(genomeIdSet):
     if Debug:
-        LOG.write("getPatricGenesPgfamsForGenomeList() called for %d genomes\n"%len(genomeIdList))
+        LOG.write("getPatricGenesPgfamsForGenomeSet() called for %d genomes\n"%len(genomeIdSet))
         LOG.write("    Session headers=\n"+str(Session.headers)+"\n")
     retval = []
     # one genome at a time, so using 'get' should be fine
-    for genomeId in genomeIdList:
+    for genomeId in genomeIdSet:
         query="and(%s,%s,%s)"%("eq(genome_id,(%s))"%genomeId, "eq(feature_type,CDS)", "eq(pgfam_id,PGF*)")
         query += "&select(genome_id,patric_id,pgfam_id)"
         query += "&limit(10000)"

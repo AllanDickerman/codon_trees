@@ -1,6 +1,7 @@
 import sys
 import re
 import subprocess
+import os.path
 import warnings
 from Bio import BiopythonExperimentalWarning
 warnings.simplefilter('ignore', BiopythonExperimentalWarning) # importing codonalign raises warnings
@@ -124,6 +125,38 @@ def readFigtreeParameters(filename):
             if m:
                 retval[m.group(1)] = m.group(2)
     return retval
+
+def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "both", focus_genome = None, genomeIdToName=None):
+    figtreeParams={}
+    if not nexus_template:
+        for dirname in sys.path: # should be in .../codon_trees/lib
+            if os.path.isfile(os.path.join(dirname, "figtree.nex")):
+                nexus_template_file = os.path.join(dirname, "figtree.nex")
+    # read a model figtree nexus file
+    if os.path.exists(nexus_template):
+        LOG.write("Found figtree template file: %s\n"%nexus_template)
+        LOG.flush()
+        figtreeParams = readFigtreeParameters(nexus_template)
+    genomeIds = re.findall("[(,]([^(,):]+)[,:)]", newick)
+    if not genomeIdToName:
+        genomeIdToName = {}
+    for genomeId, genomeName in patric_api.getNamesForGenomeIds(genomeIds):
+        if genomeId not in genomeIdToName:
+            genomeIdToName[genomeId] = genomeName+" "+genomeId
+    filesWritten=[]
+    if align_tips in ("no", "both"):
+        figtreeParams['rectilinearLayout.alignTipLabels'] = 'false'
+        nexusOut = open(outfileBase+".nex", "w")
+        writeTranslatedNexusTree(nexusOut, newick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=focus_genome)
+        nexusOut.close()
+        filesWritten.append(outfileBase+".nex")
+    if align_tips in ("yes", "both"):
+        figtreeParams['rectilinearLayout.alignTipLabels'] = 'true'
+        nexusOut = open(outfileBase+"_tipsAligned.nex", "w")
+        writeTranslatedNexusTree(nexusOut, newick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=focus_genome)
+        nexusOut.close()
+        filesWritten.append(outfileBase+"_tipsAligned.nex")
+    return filesWritten
 
 def generateFigtreeImage(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat="PDF"):
     if Debug:
@@ -258,47 +291,36 @@ def resolveDuplicatesPerPatricGenome(alignment):
     return alignment
 
 def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
-    seqIds=[]
-    protSeqDict={}
+    proteinSeqIds = set()
     for seqRecord in proteinAlignment:
-        seqIds.append(seqRecord.id)
-        protSeqDict[seqRecord.id] = seqRecord
-    dnaFasta = patric_api.getDnaFastaForPatricIds(seqIds)
+        proteinSeqIds.add(seqRecord.id)
+    dnaFasta = patric_api.getDnaFastaForPatricIds(proteinSeqIds)
     if Debug:
         LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
 
-    dnaSeqRecords = list(SeqIO.parse(StringIO.StringIO(dnaFasta), "fasta", alphabet=IUPAC.ambiguous_dna))
-    for seqRecord in proteinAlignment:
-        if extraDnaSeqs and seqRecord.id in extraDnaSeqs:
-            dnaSeqRecords.append(extraDnaSeqs[seqRecord.id])
-    if Debug:
-        LOG.write("proteinToCodonAlignment: last DNA seq record before aligning:\n%s"%str(dnaSeqRecords[-1]))
-    missingIds=[]
+    dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO.StringIO(dnaFasta), "fasta", alphabet=IUPAC.ambiguous_dna))
+    for seqId in proteinSeqIds:
+        if extraDnaSeqs and seqId in extraDnaSeqs:
+            dnaSeqDict[seqId] = extraDnaSeqs[seqId]
+            if Debug:
+                LOG.write("appending extra DNA seq %s\n"%seqId)
+    dnaSeqIds=set(dnaSeqDict.keys())
+    if dnaSeqIds != proteinSeqIds:
+        raise Exception("Protein and DNA sets differ:\nProteins: %s\nDNA: %s\n"%(", ".join(sorted(proteinSeqIds)), ", ".join(sorted(dnaSeqIds))))
     allGood = True
-    for seqRecord in dnaSeqRecords:
-        if not len(seqRecord.seq):
+    for seqId in dnaSeqDict:
+        if not len(dnaSeqDict[seqId].seq):
             allGood = False
-            missingIds.append(seqRecord.id)
-    if not allGood:
-        tempProtAl = []
-        for seqRecord in proteinAlignment:
-            if seqRecord.id not in missingIds:
-                tempProtAl.append(seqRecord)
-        proteinAlignment = tempProtAl
-    #force to be in same order (necessary?)
-    dnaSeqs_ordered = len(seqIds)*[None] #pre-allocate length of array
-    for dnaSeq in dnaSeqRecords:
-        index = seqIds.index(dnaSeq.id)
-        dnaSeqs_ordered[index] = dnaSeq
-        if len(dnaSeq.seq) < 1:
-            message = "proteinToCodonAlignment: length of sequence %s is %d\n"%(dnaSeq.id, len(dnaSeq.seq))
-            LOG.write(message+"\n")
-            LOG.flush()
-            raise Exception(message)
-    dnaSeqRecords = dnaSeqs_ordered
+            #del(dnaSeqDict[seqId])
+            LOG.write("warning: seqId %s length of dna was zero\n"%seqId)
+    dnaSeqRecords=[]
+    for proteinSeq in proteinAlignment:
+        dnaSeqRecords.append(dnaSeqDict[proteinSeq.id])
+
     if Debug:
-        LOG.write("number of dnaseqs missing = %d\n"%len(missingIds))
         LOG.write("dna seqs has %d seqs\n"%(len(dnaSeqRecords)))
+        LOG.write("DNA seq ids: %s\n"%(", ".join(sorted(dnaSeqIds))))
+        LOG.write("pro seq ids: %s\n"%(", ".join(sorted(proteinSeqIds))))
         SeqIO.write(dnaSeqRecords[:2], LOG, "fasta")
         LOG.flush()
    
