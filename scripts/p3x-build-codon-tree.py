@@ -387,11 +387,6 @@ if not args.deferRaxml:
     nexusFilesWritten = phylocode.generateNexusFile(originalNewick, nexusOutfileBase, nexus_template = nexus_template_file, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
     LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
 
-    #nexusOut = open(nexusOutfileName, "w")
-    #phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=args.focusGenome)
-    #nexusOut.close()
-    #LOG.write("nexus file written to %s\n"%nexusOutfileName)
-    #LOG.flush()
     if not (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
         LOG.write("Could not find valid path to figtree.jar\n")
         args.pathToFigtreeJar = None
