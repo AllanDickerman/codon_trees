@@ -17,7 +17,7 @@ if os.environ.has_key("KB_AUTH_TOKEN"):
     Session.headers.update({ 'Authorization' : os.environ.get('KB_AUTH_TOKEN') })
 elif os.path.exists(os.path.join(os.environ.get('HOME'), ".patric_token")):
     F = open(os.path.join(os.environ.get('HOME'), ".patric_token"))
-    Session.headers.update({ 'Authorization' : F.read() })
+    Session.headers.update({ 'Authorization' : F.read().rstrip() })
     F.close()
 if "authorization" in Session.headers:
     UserAtPatric = Session.headers["Authorization"].split(r"|")[3].split("=")[1]
