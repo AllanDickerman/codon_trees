@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFo
 parser.add_argument("--genomeIdsFile", metavar="file", type=str, help="file with PATRIC genome IDs, one per line, optional content after tab delimiter ignored")
 parser.add_argument("--genomeGroupName", metavar="name", type=str, help="name of user's genome group at PATRIC")
 parser.add_argument("--genomeObjectFile", metavar="file", type=str, help="genome object (json file) to be added to ingroup")
+parser.add_argument("--genomePgfamGeneFile", metavar="file", type=str, help="read geneIDs per PGFam per genome from this file")
 parser.add_argument("--outgroupIdsFile", metavar="file", type=str, help="ougroup genome ids, one per line (or first column of TSV)")
 parser.add_argument("--maxGenes", metavar="#", type=int, default=50, help="number of genes in concatenated alignment")
 parser.add_argument("--bootstrapReps", metavar="#", type=int, default=0, help="number of raxml 'fast boostrap' replicates")
@@ -28,7 +29,8 @@ parser.add_argument("--proteinModel", metavar="substModel", type=str, default="W
 parser.add_argument("--analyzeCodons", action='store_true', help="analyze only codons (ignore amino acids)")
 parser.add_argument("--analyzeProteins", action='store_true', help="analyze only amino acids")
 parser.add_argument("--threads", metavar="T", type=int, default=2, help="number of threads for raxml")
-parser.add_argument("--deferRaxml", action='store_true', help="set this flag if you do not want raxml to be run automatically (you can run it manually later using the command file provided)")
+parser.add_argument("--deferRaxml", action='store_true', help="does not raxml but provides command file")
+parser.add_argument("--writePgfamAlignments", action='store_true', help="create fasta alignment file per pgfam used for tree")
 parser.add_argument("--outputDirectory", type=str, default=".", metavar="out_dir", help="directory for output, create if it does not exist")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtreeJar -graphic PDF CodonTree.nex CodonTree.pdf")
 parser.add_argument("--focusGenome", metavar="genome_id", type=str, help="genome to be highlighted in color in Figtree")
@@ -122,57 +124,59 @@ phylocode.LOG = LOG
 
 
 # this is where we gather the list of Pgfam genes for each ingroup genome ID
-genomeGenePgfamList=[]
-if False and args.genomeGenePgfamsFile: # reserve for future use (convenient for debugging)
-    with open(args.genomeGenePgfamsFile) as F:
-        for line in F:
-            if "genome" in line:
-                continue # header
-            row = line.rstrip("\n").split("\t")
-            if len(row) == 3:
-                genomeGenePgfamList.append(row)
-else:
-    genomeGenePgfamList = patric_api.getPatricGenesPgfamsForGenomeSet(ingroupIds)
+pgfamMatrix = {}
+if args.genomePgfamGeneFile: # reserve for future use (convenient for debugging)
+    if not os.path.exists(args.genomePgfamGeneFile):
+        raise Exception("genomePgfamGeneFile specified as %s does not exist"%args.genomePgfamGeneFile)
+    with open(args.genomePgfamGeneFile) as F:
+        pgfamMatrix = patric_api.readPgfamGenomeMatrix(F)
 
-genomeObject=None
-genomeObject_genomeId=None
-genomeObject_name=None
+genomeObject = None
+genomeObject_genomeId = None
+genomeObject_name = None
+genomeObjectProteins = None
+genomeObjectGeneDna = None
 if args.genomeObjectFile:
-    #try:
     genomeObject = json.load(open(args.genomeObjectFile))
-    genomeObjectGenePgfams = phylocode.getPatricGenesPgfamsForGenomeObject(genomeObject)
-    genomeGenePgfamList.extend(genomeObjectGenePgfams)
+    genomeObjectProteins = patric_api.getGenomeObjectProteins(genomeObject)
+    genomeObjectGeneDna = patric_api.getGenomeObjectGeneDna(genomeObject)
+    genomeObjectGenePgfams = patric_api.getPatricGenesPgfamsForGenomeObject(genomeObject)
+    for row in genomeObjectGenePgfams:
+        genomeId, gene, pgfam = row
+        if pgfam not in pgfamMatrix:
+            pgfamMatrix[pgfam] = {}
+        if genomeId not in pgfamMatrix[pgfam]:
+            pgfamMatrix[pgfam][genomeId] = []
+        pgfamMatrix[pgfam][genomeId].append(gene)
+    
     genomeObject_genomeId = genomeObject['id']
     genomeObject_name = genomeObject['scientific_name']
     ingroupIds.add(genomeObject_genomeId)
     args.focusGenome = genomeObject_genomeId
-    LOG.write("parsed json file %s, got PGFam genes=%d, total now is %d\n"%(args.genomeObjectFile, len(genomeObjectGenePgfams), len(genomeGenePgfamList)))
+    LOG.write("parsed json file %s"%args.genomeObjectFile)
     LOG.flush()
-    #except Exception as e:
-    #LOG.write("Problem reading genome object json file.\n%s\n"%str(e))
 
-# add outgroup genes+pgfams to list, get dynamically as the outgroup might change from run to run
-if len(outgroupIds):
-    genomeGenePgfamList.extend(patric_api.getPatricGenesPgfamsForGenomeSet(outgroupIds))
+allGenomeIds = ingroupIds
+allGenomeIds.update(outgroupIds)
+genomesWithData = set()
+for pgfam in pgfamMatrix:
+    genomesWithData.update(set(pgfamMatrix[pgfam].keys()))
+genomesWithoutData = allGenomeIds - genomesWithData
+if len(genomesWithoutData):
+    pgfamMatrix = patric_api.getPgfamGenomeMatrix(genomesWithoutData, pgfamMatrix)
 
-with open(args.outputDirectory+fileBase+".genomeGenePgfams.txt", 'w') as F:
-    for row in genomeGenePgfamList:
-        F.write("\t".join(row)+"\n")
+with open(args.outputDirectory+fileBase+".pgfamMatrix.txt", 'w') as F:
+    patric_api.writePgfamGenomeMatrix(pgfamMatrix, F)
 
-LOG.write("got genes and pgfams for genomes, len=%d\n"%len(genomeGenePgfamList))
-for row in genomeGenePgfamList[:1]:
-    LOG.write("\t".join(row)+"\n")
+LOG.write("got pgfams for genomes, len=%d\n"%len(pgfamMatrix))
 LOG.flush()
-if not len(genomeGenePgfamList):
-    LOG.write("got no genes and pgfams for genomes, exiting\n")
-    sys.exit(1)
 
 LOG.write("allowing %d genomes missing per PGfam of ingroup (out of %d total)\n"%(args.maxGenomesMissing, len(ingroupIds)))
 if args.maxGenomesMissing >= len(ingroupIds)-4:
     raise Exception("getSingleCopyPgfams: maxGenomesMissing too large: %d"%args.maxGenomesMissing)
 
 # call to getSingleCopyPgfams uses ingroup taxa, outgroup is not involved in selecting single copy pgfams
-singleCopyPgfams = phylocode.selectSingleCopyPgfams(genomeGenePgfamList, ingroupIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
+singleCopyPgfams = phylocode.selectSingleCopyPgfams(pgfamMatrix, ingroupIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
 
 LOG.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))
 if len(singleCopyPgfams) > args.maxGenes:
@@ -186,54 +190,24 @@ with open(args.outputDirectory+fileBase+".singlishCopyPgfams.txt", 'w') as F:
     for pgfam in singleCopyPgfams:
         F.write(pgfam+"\n")
 
-allGenomeIds = ingroupIds
-allGenomeIds.update(outgroupIds)
-#genesForPgfams = phylocode.getGenesForPgfams(genomeGenePgfamList, allGenomeIds, singleCopyPgfams)
-genesForPgfams={}
-for pgfam in singleCopyPgfams:
-    genesForPgfams[pgfam] = set()
-genomeObjectGeneDna={}
-genomeObjectGenes=set()
-geneToGenomeId = {} # to easily get genome id for a gene 
-numGenesAdded=0
-for row in genomeGenePgfamList:
-    genome, gene, pgfam = row
-    if genome in allGenomeIds and pgfam in genesForPgfams:
-        geneToGenomeId[gene] = genome
-        genesForPgfams[pgfam].add(gene)
-        if genome == genomeObject_genomeId:
-            genomeObjectGenes.add(gene)
-        numGenesAdded += 1
-
-LOG.write("got %d genes for %d pgfams\n"%(numGenesAdded, len(genesForPgfams)))
-LOG.flush()
-for pgfamId in singleCopyPgfams: #genesForPgfams:
-    if pgfamId not in genesForPgfams:
-        LOG.write("singleCopy pgfamId %s not in genesForPgfams\n"%pgfamId)
-        continue
-if genomeObject:
-    genomeObjectProteins = phylocode.getGenomeObjectProteins(genomeObjectGenes, genomeObject)
-    genomeObjectGeneDna = phylocode.getGenomeObjectGeneDna(genomeObjectGenes, genomeObject)
-
 proteinAlignments = {}
 codonAlignments = {}
 alignedTaxa=set()
-#phylocode.generateAlignmentsForCodonsAndProteins(genesForPgfams, proteinAlignments, codonAlignments)
-for pgfamId in genesForPgfams: #genesForPgfams:
-    proteinFasta = patric_api.getProteinFastaForPatricIds(genesForPgfams[pgfamId])
+for pgfamId in singleCopyPgfams:
+    geneIdSet = set()
+    for genome in pgfamMatrix[pgfamId]:
+        geneIdSet.update(set(pgfamMatrix[pgfamId][genome]))
+    proteinFasta = patric_api.getProteinFastaForPatricIds(geneIdSet)
     proteinSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO.StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein))
-    if args.genomeObjectFile:
-        for geneId in genesForPgfams[pgfamId]:
-            if geneId in genomeObjectProteins:
+    for genomeId in pgfamMatrix[pgfamId]:
+        for geneId in pgfamMatrix[pgfamId][genomeId]:
+            if genomeId == genomeObject_genomeId:
                 proteinSeqDict[geneId] = genomeObjectProteins[geneId]
-    proteinSeqRecords = list()
-    for proteinId in proteinSeqDict:
-        proteinSeqDict[proteinId].annotations["genome_id"] = geneToGenomeId[proteinId]
-        proteinSeqRecords.append(proteinSeqDict[proteinId])
+        proteinSeqDict[geneId].annotations["genome_id"] = genomeId
+        #proteinSeqRecords.append(proteinSeqDict[proteinId])
     if args.debugMode:
-        LOG.write("protein set for %s has %d seqs\n"%(pgfamId, len(proteinSeqRecords)))
-        #SeqIO.write(proteinSeqRecords[0], LOG, "fasta")
-    proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqRecords)
+        LOG.write("protein set for %s has %d seqs\n"%(pgfamId, len(proteinSeqDict)))
+    proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqDict.values())
     proteinAlignment = phylocode.resolveDuplicatesPerPatricGenome(proteinAlignment)
     proteinAlignment.sort()
     if args.debugMode:
@@ -277,41 +251,60 @@ codonPositions = 0
 # write the genes included in each homology group (and those paralogs excluded)
 with open(args.outputDirectory+phyloFileBase+".pgfamsAndGenesIncludedInAlignment.txt", 'w') as F:
     for pgfamId in singleCopyPgfams:
-        if pgfamId in genesForPgfams:
-            if pgfamId in proteinAlignments:
-                proteinPositions += proteinAlignments[pgfamId].get_alignment_length()
-                genesNotIncluded = set(genesForPgfams[pgfamId])
-                genesIncluded = set()
-                F.write(pgfamId+"\tProteins\t")
-                for seqRecord in proteinAlignments[pgfamId]:
+        if pgfamId in proteinAlignments:
+            proteinPositions += proteinAlignments[pgfamId].get_alignment_length()
+            genesNotIncluded = set()
+            for genome in pgfamMatrix[pgfamId]:
+                genesNotIncluded.update(set(pgfamMatrix[pgfamId][genome]))
+            genesIncluded = set()
+            F.write(pgfamId+"\tProteins\t")
+            for seqRecord in proteinAlignments[pgfamId]:
+                originalId = seqRecord.annotations['original_id']
+                F.write("\t"+originalId)
+                if originalId not in genesNotIncluded:
+                    LOG.write("Problem: originalId %s not in genesForPgfams for %s\n"%(originalId, pgfamId))
+                else:
+                    genesNotIncluded.remove(originalId)
+                genesIncluded.add(originalId)
+            if len(genesNotIncluded):
+                F.write("\tdeletedParalogs: \t"+"\t".join(genesNotIncluded))
+            F.write("\n")
+            if pgfamId in codonAlignments:
+                F.write(pgfamId+"\tCodons\t")
+                codonPositions += codonAlignments[pgfamId].get_alignment_length()
+                for seqRecord in codonAlignments[pgfamId]:
                     originalId = seqRecord.annotations['original_id']
                     F.write("\t"+originalId)
-                    if originalId not in genesNotIncluded:
-                        LOG.write("Problem: originalId %s not in genesForPgfams for %s\n"%(originalId, pgfamId))
-                    else:
-                        genesNotIncluded.remove(originalId)
-                    genesIncluded.add(originalId)
-                if len(genesNotIncluded):
-                    F.write("\tdeletedParalogs: \t"+"\t".join(genesNotIncluded))
+                    genesIncluded.remove(originalId)
+                if len(genesIncluded):
+                    F.write("\tlackingCodonAlignment: \t"+"\t".join(genesIncluded))
                 F.write("\n")
-                if pgfamId in codonAlignments:
-                    F.write(pgfamId+"\tCodons\t")
-                    codonPositions += codonAlignments[pgfamId].get_alignment_length()
-                    for seqRecord in codonAlignments[pgfamId]:
-                        originalId = seqRecord.annotations['original_id']
-                        F.write("\t"+originalId)
-                        genesIncluded.remove(originalId)
-                    if len(genesIncluded):
-                        F.write("\tlackingCodonAlignment: \t"+"\t".join(genesIncluded))
-                    F.write("\n")
-                else:
-                    F.write(pgfamId+"\nNo codon alignment\n")
             else:
-                F.write(pgfamId+"\tNo protein alignment\n")
+                F.write(pgfamId+"\nNo codon alignment\n")
         else:
-            F.write(pgfamId+" has no genes selected")
+            F.write(pgfamId+"\tNo protein alignment\n")
         F.write("\n")
     F.close()
+
+if args.writePgfamAlignments:
+    for pgfam in proteinAlignments:
+        SeqIO.write(proteinAlignments[pgfam], args.outputDirectory+pgfam+".faa", "fasta")
+
+with open(args.outputDirectory + "PgfamAlignmentStats.txt", "w") as F:
+    first = True
+    for pgfam in proteinAlignments:
+        stats = phylocode.calcAlignmentStats(proteinAlignments[pgfam])
+        if first:
+            F.write("PGFam\t"+"\t".join(sorted(stats.keys()))+"\n")
+            first = False
+        F.write(pgfam)
+        for key in sorted(stats):
+            val = stats[key]
+            if isinstance(val,int):
+                F.write("\t%d"%stats[key])
+            else:
+                F.write("\t%.6f"%stats[key])
+        F.write("\n")
 
 # finally, output concatenated protein and/or DNA alignment and partitions and raxml command to appropriate files
 raxmlCommand=''

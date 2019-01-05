@@ -14,8 +14,10 @@ Base_url="https://www.patricbrc.org/api/"
 Session = requests.Session()
 UserAtPatric = None
 if os.environ.has_key("KB_AUTH_TOKEN"):
+    LOG.write("reading auth key from environment\n")
     Session.headers.update({ 'Authorization' : os.environ.get('KB_AUTH_TOKEN') })
 elif os.path.exists(os.path.join(os.environ.get('HOME'), ".patric_token")):
+    LOG.write("reading auth key from file\n")
     F = open(os.path.join(os.environ.get('HOME'), ".patric_token"))
     Session.headers.update({ 'Authorization' : F.read().rstrip() })
     F.close()
@@ -42,7 +44,7 @@ def getGenomeGroupIds(genomeGroupName):
     genomeGroupSpecifier = genomeGroupSpecifier.replace("/", "%2f")
     query = "in(genome_id,GenomeGroup("+genomeGroupSpecifier+"))"
     query += "&select(genome_id)"
-    query += "&limit(1000)"
+    query += "&limit(10000)"
     if Debug:
         LOG.write("requesting group %s for user %s\n"%(genomeGroupName, UserAtPatric))
         LOG.write("query =  %s\n"%(query))
@@ -186,7 +188,7 @@ def getPatricGenesPgfamsForGenomeSet(genomeIdSet):
     for genomeId in genomeIdSet:
         query="and(%s,%s,%s)"%("eq(genome_id,(%s))"%genomeId, "eq(feature_type,CDS)", "eq(pgfam_id,PGF*)")
         query += "&select(genome_id,patric_id,pgfam_id)"
-        query += "&limit(10000)"
+        query += "&limit(25000)"
         response = Session.get(Base_url+"genome_feature/", params=query) #, 
         """
         req = requests.Request('POST', Base_url+"genome_feature/", data=query)
@@ -208,3 +210,116 @@ def getPatricGenesPgfamsForGenomeSet(genomeIdSet):
         if Debug:
             LOG.write("    got %d pgfams for that genome\n"%(len(retval)-curLen))
     return(retval)
+
+def getPgfamGenomeMatrix(genomeIdSet, ggpMat = None):
+    """ Given list of genome ids: 
+        tabulate genes per genome per pgfam 
+        (formats data from getPatricGenesPgfamsForGenomeSet as table)
+    """
+    genomeGenePgfamList = getPatricGenesPgfamsForGenomeSet(genomeIdSet)
+    if not ggpMat: # if a real value was passed, extend it
+        ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+    for row in genomeGenePgfamList:
+        genome, gene, pgfam = row
+        if pgfam not in ggpMat:
+            ggpMat[pgfam] = {}
+        if genome not in ggpMat[pgfam]:
+            ggpMat[pgfam][genome] = []
+        ggpMat[pgfam][genome].append(gene)
+    return ggpMat
+
+def writePgfamGenomeMatrix(ggpMat, fileHandle):
+    """ write out pgfamGenomeMatrix to file handle 
+    """
+    # first collect set of all genomes
+    genomeSet = set()
+    ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+    for pgfam in ggpMat:
+        genomeSet.update(set(ggpMat[pgfam].keys()))
+    genomes = sorted(genomeSet)
+    fileHandle.write("PGFam\t"+"\t".join(genomes)+"\n")
+    for pgfam in ggpMat:
+        fileHandle.write(pgfam)
+        for genome in genomes:
+            gene = ""
+            if genome in ggpMat[pgfam]:
+                gene = ",".join(ggpMat[pgfam][genome])
+            fileHandle.write("\t"+gene)
+        fileHandle.write("\n")
+
+def readPgfamGenomeMatrix(fileHandle):
+    """ read pgfamGenomeMatrix from file handle 
+    """
+    # genome ids are headers in first line
+    header = fileHandle.readline().rstrip()
+    genomes = header.split("\t")[1:] # first entry is placeholder for pgfam rownames
+    ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+    for row in fileHandle:
+        fields = row.rstrip().split("\t")
+        pgfam = fields[0]
+        ggpMat[pgfam] = {}
+        data = fields[1:]
+        for i, genome in enumerate(genomes):
+            if len(data[i]):
+                ggpMat[pgfam][genome] = data.split(",")
+    return ggpMat
+
+def getPatricGenesPgfamsForGenomeObject(genomeObject):
+# parse a PATRIC genome object (read from json format) for PGFams
+    retval = [] # a list of tupples of (genomeId, Pgfam, geneId)
+    genomeId = genomeObject['id']
+    for feature in genomeObject['features']:
+        if 'family_assignments' in feature:
+            for familyAssignment in feature['family_assignments']:
+                if familyAssignment[0] == 'PGFAM':
+                    retval.append((genomeId, feature['id'], familyAssignment[1]))
+    return retval
+
+def getGenomeObjectProteins(genomeObject):
+# return dictionary of patricId -> BioPython.SeqRecord
+    genomeId = genomeObject['id']
+    retval = {}
+    for feature in genomeObject['features']:
+        patricId, product, genomeId, aa_sequence = '', '', '', ''
+        patricId = feature['id']
+        if "protein_translation" in feature:
+            aa_sequence = feature["protein_translation"]
+        if 'function' in feature:
+            product = feature['function']
+        simpleSeq = Seq(aa_sequence, IUPAC.extended_protein)
+        seqRecord = SeqRecord(simpleSeq, id=patricId, description=product)
+        seqRecord.annotations["genome_id"] = genomeId
+        retval[patricId] = seqRecord
+    return retval
+
+def getGenomeObjectGeneDna(genomeObject):
+# return dictionary of patricId -> BioPython.SeqRecord
+    genomeId = genomeObject['id']
+    contigSeq = {}
+    for contig in genomeObject['contigs']:
+        contigSeq[contig['id']] = contig['dna']
+    retval = {} # dict of SeqRecords
+    for feature in genomeObject['features']:
+        geneId = feature['id']
+        if geneId not in patricIds:
+            continue
+        product = ''
+        if 'product' in feature:
+            product = feature['function']
+        if not 'location' in feature:
+            continue
+        contig, start, ori, length = feature['location'][0] # this should be an array of (contig, start, orientation, length)
+        start = int(float(start))
+        length = int(float(length))
+        if ori == '+':
+            start -= 1
+            simpleSeq = Seq(contigSeq[contig][start:start+length], IUPAC.ambiguous_dna)
+        if ori == '-':
+            simpleSeq = Seq(contigSeq[contig][start-length:start], IUPAC.ambiguous_dna)
+            simpleSeq = simpleSeq.reverse_complement()
+
+        seqRecord = SeqRecord(simpleSeq, id=geneId, description=product)
+        seqRecord.annotations["genome_id"] = genomeId
+        retval[geneId] = seqRecord
+    return retval
+

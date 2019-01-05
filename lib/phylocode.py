@@ -3,13 +3,14 @@ import re
 import subprocess
 import os.path
 import warnings
-from Bio import BiopythonExperimentalWarning
-warnings.simplefilter('ignore', BiopythonExperimentalWarning) # importing codonalign raises warnings
+from Bio import BiopythonWarning
 from Bio.Alphabet import IUPAC
 from Bio import AlignIO
 from Bio import SeqIO
 from Bio import Alphabet
-from Bio import codonalign
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore', BiopythonWarning)
+    from Bio import codonalign
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.Align import MultipleSeqAlignment
@@ -21,39 +22,46 @@ import StringIO
 Debug = False #shared across functions defined here
 LOG = sys.stderr
 
-def selectSingleCopyPgfams(genomeGenePgfamList, genomeIdList, requiredGenome=None, maxGenomesMissing=0, maxAllowedDups=0):
-    # given a list of genome_ids, gene_ids, and pgfam_ids
-    # find the set of pgfam_ids which satisfy the minPropPresent and maxAllowedDups criteria for specified genomes
-    pgfamGenomeCount={}
-    pgfamCount={}
-    genomes=set()
-    numDups = {}
+def getPgfamDistribution(genomeGenePgfamList):
+    """ Given list of genome-gene-pgfam tuples, 
+        tabulate counts per genome per pgfam, 
+        num duplications per pgfam, 
+        num single-copy.
+        This information can be used to identify PGFams suitable for phylogenetic inference for these genomes.
+        Alternatively, can use to identify genomes with sparse single-copy coverage to remove to create denser phylogenetic matrix. 
+    """
+    ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+    for row in genomeGenePgfamList:
+        genome, gene, pgfam = row
+        if pgfam not in ggpMat:
+            ggpMat[pgfam] = {}
+        if genome not in ggpMat[pgfam]:
+            ggpMat[pgfam][genome] = []
+        ggpMat[pgfam][genome].append(gene)
+    return ggpMat
+
+def selectSingleCopyPgfams(pgfamMatrix, genomeIdList, requiredGenome=None, maxGenomesMissing=0, maxAllowedDups=0):
+    # given a genome-gene-pgfam matrix
+    # find the set of pgfam_ids which satisfy the maxGenomesMissing & maxAllowedDups criteria for specified genomes
+    pgfamScore = {}
+    scPgfamsIfGenomeOmitted = {}
     if not len(genomeIdList) > 3:
         raise Exception("getSingleCopyPgfams: number of genome IDs too low: %d"%len(genomeIdList))
     minGenomesPresent = len(genomeIdList) - maxGenomesMissing
     if minGenomesPresent <= 0:
         raise Exception("getSingleCopyPgfams: maxGenomesMissing too large: %d"%maxGenomesMissing)
-    for row in genomeGenePgfamList:
-        genome, gene, pgfam = row
-        if genome not in genomeIdList:
-            continue # only pay attention to genomes on list
-        if pgfam not in pgfamGenomeCount:
-            pgfamGenomeCount[pgfam] = {}
-            pgfamCount[pgfam] = 0
-            numDups[pgfam] = 0
-        if genome not in pgfamGenomeCount[pgfam]:
-            pgfamGenomeCount[pgfam][genome] = 0
-        else:
-            numDups[pgfam] += 1
-        pgfamGenomeCount[pgfam][genome] += 1
-        pgfamCount[pgfam] += 1
-        genomes.add(genome)
-    suitablePgfamList = []
-    for pgfam in sorted(pgfamGenomeCount, key=lambda id: (pgfamGenomeCount[id], -numDups[id])):
-        if requiredGenome and not requiredGenome in pgfamGenomeCount[pgfam]:
-            continue # does not include a required genome
-        if len(pgfamGenomeCount[pgfam]) >= minGenomesPresent and numDups[pgfam] <= maxAllowedDups:
-            suitablePgfamList.append(pgfam)
+    for pgfam in pgfamMatrix:
+        if requiredGenome and requiredGenome not in pgfamMatrix[pgfam]:
+            continue # skip pgfam if it does not include required genome
+        pgfamGenomeCount = 0
+        numDups = 0
+        for genome in genomeIdList:
+            if genome in pgfamMatrix[pgfam]:
+                pgfamGenomeCount += 1
+                numDups += len(pgfamMatrix[pgfam][genome]) - 1
+        if pgfamGenomeCount >= minGenomesPresent and numDups <= maxAllowedDups:
+            pgfamScore[pgfam] = pgfamGenomeCount - numDups # combined score of both factors, for sorting
+    suitablePgfamList = sorted(pgfamScore, key=pgfamScore.get, reverse=True)
     return suitablePgfamList
 
 def getGenesForPgfams(genomeGenePgfam, genomeIdList, singleCopyPgfams):
@@ -181,6 +189,33 @@ def alignSeqRecordsMuscle(seqRecords):
     alignment.sort()
     return(alignment)
 
+def calcAlignmentStats(alignment):
+    # analyze a BioPython MultipleSeqAlignment object to describe conservation levels
+    stats = {}
+    stats['num_pos'] = alignment.get_alignment_length()
+    stats['num_seqs'] = len(alignment)
+    numGaps = 0
+    numNonGaps = 0
+    sumSquaredFreq = 0
+    for pos in range(0,stats['num_pos']):
+        stateCount = {}
+        states = alignment[: , pos]
+        for residue in states:
+            if residue == '-':
+                numGaps += 1
+                continue
+            numNonGaps += 1
+            if residue not in stateCount:
+                stateCount[residue] = 0
+            stateCount[residue] += 1
+        for residue in stateCount:
+            freq = stateCount[residue]/float(stats['num_seqs'])
+            sumSquaredFreq += freq*freq
+    stats['mean_sum_squared_freq'] = sumSquaredFreq/stats['num_pos']
+    stats['num_gaps'] = numGaps
+    stats['num_non_gaps'] = numNonGaps
+    return stats
+
 def calcSumAlignmentDistance(alignment, querySeq):
     sumDist = 0
     for record in alignment:
@@ -291,22 +326,21 @@ def resolveDuplicatesPerPatricGenome(alignment):
     return alignment
 
 def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
-    proteinSeqIds = set()
+    protSeqDict = {}
     for seqRecord in proteinAlignment:
-        proteinSeqIds.add(seqRecord.id)
-    dnaFasta = patric_api.getDnaFastaForPatricIds(proteinSeqIds)
+        protSeqDict[seqRecord.id] = seqRecord
+    dnaFasta = patric_api.getDnaFastaForPatricIds(protSeqDict.keys())
     if Debug:
         LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
 
     dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO.StringIO(dnaFasta), "fasta", alphabet=IUPAC.ambiguous_dna))
-    for seqId in proteinSeqIds:
+    for seqId in protSeqDict:
         if extraDnaSeqs and seqId in extraDnaSeqs:
             dnaSeqDict[seqId] = extraDnaSeqs[seqId]
             if Debug:
                 LOG.write("appending extra DNA seq %s\n"%seqId)
-    dnaSeqIds=set(dnaSeqDict.keys())
-    if dnaSeqIds != proteinSeqIds:
-        raise Exception("Protein and DNA sets differ:\nProteins: %s\nDNA: %s\n"%(", ".join(sorted(proteinSeqIds)), ", ".join(sorted(dnaSeqIds))))
+    if set(dnaSeqDict.keys()) != set(protSeqDict.keys()):
+        raise Exception("Protein and DNA sets differ:\nProteins: %s\nDNA: %s\n"%(", ".join(sorted(protSeqDict)), ", ".join(sorted(dnaSeqDict))))
     allGood = True
     for seqId in dnaSeqDict:
         if not len(dnaSeqDict[seqId].seq):
@@ -319,8 +353,9 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
 
     if Debug:
         LOG.write("dna seqs has %d seqs\n"%(len(dnaSeqRecords)))
-        LOG.write("DNA seq ids: %s\n"%(", ".join(sorted(dnaSeqIds))))
-        LOG.write("pro seq ids: %s\n"%(", ".join(sorted(proteinSeqIds))))
+        LOG.write("DNA seq ids: %s\n"%(", ".join(sorted(dnaSeqDict))))
+        LOG.write("pro seq ids: %s\n"%(", ".join(sorted(protSeqDict))))
+        LOG.write("first two aligned DNA seqs:\n")
         SeqIO.write(dnaSeqRecords[:2], LOG, "fasta")
         LOG.flush()
    
@@ -338,16 +373,18 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
             dnaSeqs[i].seq = "N"*shortfall + dnaSeqs[i].seq + "N"*shortfall
     """
     returnValue = None
-    try:
-        returnValue = codonalign.build(proteinAlignment, dnaSeqRecords, max_score=1000)
-        for dnaSeq in returnValue:
-            proteinRecord = protSeqDict[dnaSeq.id]
-            if proteinRecord.annotations:
-                dnaSeq.annotations = proteinRecord.annotations.copy()
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', BiopythonWarning)
+        try:
+            returnValue = codonalign.build(proteinAlignment, dnaSeqRecords, max_score=1000)
+            for dnaSeq in returnValue:
+                proteinRecord = protSeqDict[dnaSeq.id]
+                if proteinRecord.annotations:
+                    dnaSeq.annotations = proteinRecord.annotations.copy()
 
-    except Exception as e:
-        LOG.write("problem in codonalign, skipping\n%s\n"%str(e))
-        #raise
+        except Exception as e:
+            LOG.write("problem in codonalign, skipping\n%s\n"%str(e))
+            #raise
     return returnValue
     
 def relabelSequencesByGenomeId(seqRecordSet):
@@ -438,69 +475,4 @@ def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
     destination.close()
 
     return()
-
-def getPatricGenesPgfamsForGenomeObject(genomeObject):
-# parse a PATRIC genome object (read from json format) for PGFams
-    retval = [] # a list of tupples of (genomeId, Pgfam, geneId)
-    genomeId = genomeObject['id']
-    for feature in genomeObject['features']:
-        if 'family_assignments' in feature:
-            for familyAssignment in feature['family_assignments']:
-                if familyAssignment[0] == 'PGFAM':
-                    retval.append((genomeId, feature['id'], familyAssignment[1]))
-    return retval
-
-def getGenomeObjectProteins(patricIds, genomeObject):
-# return dictionary of patricId -> BioPython.SeqRecord
-    genomeId = genomeObject['id']
-    retval = {}
-    for feature in genomeObject['features']:
-        patricId, product, genomeId, aa_sequence = '', '', '', ''
-        patricId = feature['id']
-        if not patricId in patricIds:
-            continue
-        if "protein_translation" in feature:
-            aa_sequence = feature["protein_translation"]
-        if 'function' in feature:
-            product = feature['function']
-        simpleSeq = Seq(aa_sequence, IUPAC.extended_protein)
-        seqRecord = SeqRecord(simpleSeq, id=patricId, description=product)
-        seqRecord.annotations["genome_id"] = genomeId
-        retval[patricId] = seqRecord
-    return retval
-
-def getGenomeObjectGeneDna(patricIds, genomeObject):
-# return dictionary of patricId -> BioPython.SeqRecord
-    genomeId = genomeObject['id']
-    contigSeq = {}
-    for contig in genomeObject['contigs']:
-        contigSeq[contig['id']] = contig['dna']
-    retval = {} # dict of SeqRecords
-    for feature in genomeObject['features']:
-        if not feature['id'] in patricIds:
-            continue
-        geneId = feature['id']
-        if geneId not in patricIds:
-            continue
-        product = ''
-        if 'product' in feature:
-            product = feature['function']
-        if not 'location' in feature:
-            continue
-        contig, start, ori, length = feature['location'][0] # this should be an array of (contig, start, orientation, length)
-        start = int(float(start))
-        length = int(float(length))
-        if ori == '+':
-            start -= 1
-            simpleSeq = Seq(contigSeq[contig][start:start+length], IUPAC.ambiguous_dna)
-        if ori == '-':
-            simpleSeq = Seq(contigSeq[contig][start-length:start], IUPAC.ambiguous_dna)
-            simpleSeq = simpleSeq.reverse_complement()
-
-        seqRecord = SeqRecord(simpleSeq, id=geneId, description=product)
-        seqRecord.annotations["genome_id"] = genomeId
-        retval[geneId] = seqRecord
-    return retval
-
-
 
