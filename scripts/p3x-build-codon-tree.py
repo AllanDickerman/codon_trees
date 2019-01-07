@@ -105,6 +105,7 @@ elif args.genomeGroupName:
 else:
     fileBase = "codon_tree"
 
+
 # if either codons or proteins is specified, analyze just that, otherwise analyze both
 if (args.analyzeCodons or args.analyzeProteins):
     if args.analyzeCodons:

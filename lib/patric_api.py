@@ -116,6 +116,7 @@ def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
         retval.append(fields)
     return(retval)
 """
+
 def getProteinFastaForPatricIds(patricIds):
     query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
     query += "&limit(%d)"%len(patricIds)

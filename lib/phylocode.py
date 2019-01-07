@@ -8,9 +8,7 @@ from Bio.Alphabet import IUPAC
 from Bio import AlignIO
 from Bio import SeqIO
 from Bio import Alphabet
-with warnings.catch_warnings():
-    warnings.simplefilter('ignore', BiopythonWarning)
-    from Bio import codonalign
+from Bio import codonalign
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.Align import MultipleSeqAlignment
