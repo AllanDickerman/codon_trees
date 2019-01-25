@@ -13,11 +13,11 @@ from Bio import SeqIO
 from Bio.Alphabet import IUPAC
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument("--genomeIdsFile", metavar="file", type=str, help="file with PATRIC genome IDs, one per line, optional content after tab delimiter ignored")
-parser.add_argument("--genomeGroupName", metavar="name", type=str, help="name of user's genome group at PATRIC")
+parser.add_argument("--genomeIdsFile", metavar="file", type=str, nargs="*", help="file with PATRIC genome IDs, one per line (or first column of TSV)")
+parser.add_argument("--genomeGroupName", metavar="name", type=str, nargs="*", help="name of user's genome group at PATRIC")
 parser.add_argument("--genomeObjectFile", metavar="file", type=str, help="genome object (json file) to be added to ingroup")
 parser.add_argument("--genomePgfamGeneFile", metavar="file", type=str, help="read geneIDs per PGFam per genome from this file")
-parser.add_argument("--outgroupIdsFile", metavar="file", type=str, help="ougroup genome ids, one per line (or first column of TSV)")
+parser.add_argument("--optionalGenomeIdsFile", metavar="file", type=str, help="optional genome ids, one per line (or first column of TSV)")
 parser.add_argument("--maxGenes", metavar="#", type=int, default=50, help="number of genes in concatenated alignment")
 parser.add_argument("--bootstrapReps", metavar="#", type=int, default=0, help="number of raxml 'fast boostrap' replicates")
 parser.add_argument("--maxGenomesMissing", metavar="#", type=int, default=0, help="ingroup genomes allowed to lack a member of any homolog group")
@@ -65,35 +65,37 @@ phylocode.checkMuscle()
 
 ingroupIds = set() # keep unique
 if args.genomeIdsFile:
-    with open(args.genomeIdsFile) as F:
-        for line in F:
-            m = re.match(r"(\d+\.\d+)", line)
-            if m:
-                ingroupIds.add(m.group(1))
-LOG.write("elapsed seconds = %f\n"%(time()-starttime))
-LOG.write("from %s got %d ingroupIds\n%s\n"%(args.genomeIdsFile, len(ingroupIds), "\t".join(ingroupIds)))
+    for filename in args.genomeIdsFile
+        with open(filename) as F:
+            for line in F:
+                m = re.match(r"(\d+\.\d+)", line)
+                if m:
+                    ingroupIds.add(m.group(1))
+    LOG.write("elapsed seconds = %f\n"%(time()-starttime))
+    LOG.write("from %s got %d ingroupIds\n%s\n"%(",".join(args.genomeIdsFile), len(ingroupIds), "\t".join(ingroupIds)))
 if args.genomeObjectFile:
     LOG.write("genome object file: %s\n"%args.genomeObjectFile)
 LOG.flush()
 
 if args.genomeGroupName:
-    LOG.write("requesting genome IDs for user group %s\n"%args.genomeGroupName)
-    ids = patric_api.getGenomeGroupIds(args.genomeGroupName)
-    LOG.write("got %d ids for %s\n"%(len(ids), args.genomeGroupName))
-    ingroupIds.update(set(ids))
+    for groupName in args.genomeGroupName:
+        LOG.write("requesting genome IDs for user group %s\n"%args.genomeGroupName)
+        ids = patric_api.getGenomeGroupIds(args.genomeGroupName)
+        LOG.write("got %d ids for %s\n"%(len(ids), args.genomeGroupName))
+        ingroupIds.update(set(ids))
 
-outgroupIds = set()
-if args.outgroupIdsFile:
-    with open(args.outgroupIdsFile) as F:
+optionalGenomeIds = set()
+if args.optionalGenomeIdsFile:
+    with open(args.optionalGenomeIdsFile) as F:
         for line in F:
             m = re.match(r"(\d+\.\d+)", line)
             if m:
-                outgroupIds.add(m.group(1))
-LOG.write("got %d outgroupIds\n%s\n"%(len(outgroupIds), "\t".join(outgroupIds)))
+                optionalGenomeIds.add(m.group(1))
+LOG.write("got %d optionalGenomeIds\n%s\n"%(len(optionalGenomeIds), "\t".join(optionalGenomeIds)))
 LOG.flush()
 
-if len(ingroupIds) + len(outgroupIds) < 4:
-    LOG.write("too few genomes to build a tree with: %d"%(len(ingroupIds)+len(outgroupIds)))
+if len(ingroupIds) + len(optionalGenomeIds) < 4:
+    LOG.write("too few genomes to build a tree with: %d"%(len(ingroupIds)+len(optionalGenomeIds)))
     sys.exit(1)
 
 # figure out a base name for ouput files
@@ -158,7 +160,7 @@ if args.genomeObjectFile:
     LOG.flush()
 
 allGenomeIds = ingroupIds
-allGenomeIds.update(outgroupIds)
+allGenomeIds.update(optionalGenomeIds)
 genomesWithData = set()
 for pgfam in pgfamMatrix:
     genomesWithData.update(set(pgfamMatrix[pgfam].keys()))
@@ -167,7 +169,7 @@ if len(genomesWithoutData):
     pgfamMatrix = patric_api.getPgfamGenomeMatrix(genomesWithoutData, pgfamMatrix)
 
 with open(args.outputDirectory+fileBase+".pgfamMatrix.txt", 'w') as F:
-    patric_api.writePgfamGenomeMatrix(pgfamMatrix, F)
+   patric_api.writePgfamGenomeMatrix(pgfamMatrix, F)
 
 LOG.write("got pgfams for genomes, len=%d\n"%len(pgfamMatrix))
 LOG.flush()
@@ -176,7 +178,7 @@ LOG.write("allowing %d genomes missing per PGfam of ingroup (out of %d total)\n"
 if args.maxGenomesMissing >= len(ingroupIds)-4:
     raise Exception("getSingleCopyPgfams: maxGenomesMissing too large: %d"%args.maxGenomesMissing)
 
-# call to getSingleCopyPgfams uses ingroup taxa, outgroup is not involved in selecting single copy pgfams
+# call to getSingleCopyPgfams uses ingroup taxa, optional genomes are not involved in selecting single copy pgfams
 singleCopyPgfams = phylocode.selectSingleCopyPgfams(pgfamMatrix, ingroupIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
 
 LOG.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))

@@ -209,10 +209,33 @@ def calcAlignmentStats(alignment):
         for residue in stateCount:
             freq = stateCount[residue]/float(stats['num_seqs'])
             sumSquaredFreq += freq*freq
-    stats['mean_sum_squared_freq'] = sumSquaredFreq/stats['num_pos']
-    stats['num_gaps'] = numGaps
-    stats['num_non_gaps'] = numNonGaps
+    stats['squared_freq'] = sumSquaredFreq/stats['num_pos']
+    stats['gaps'] = numGaps
+    stats['prop_gaps'] = numGaps/(float(numGaps+numNonGaps))
+    #stats['non_gaps'] = numNonGaps
     return stats
+
+def suggestAlignmentDeletions(alignment):
+    """ 
+    analyze a BioPython MultipleSeqAlignment object to calculate how many gaps could be avoided by omitting sequences
+    return dict of tuple of seqIds to improvement score of deleting that set of seqs
+    """
+    delsets = {}
+    for pos in range(0, alignment.get_alignment_length()):
+        states = alignment[: , pos]
+        gaps = 0.0
+        nongap_seqs = []
+        for i, residue in enumerate(states):
+            if residue == '-':
+                gaps += 1
+            else:
+                nongap_seqs.append(alignment[i].id)
+        if gaps and gaps/len(alignment) >= 0.75: # a gap-heavy position
+            key = tuple(nongap_seqs)
+            if key not in delsets:
+                delsets[key] = 0
+            delsets[key] += 1
+    return delsets
 
 def calcSumAlignmentDistance(alignment, querySeq):
     sumDist = 0
