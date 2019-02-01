@@ -13,6 +13,7 @@ from Bio import SeqIO
 from Bio.Alphabet import IUPAC
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument("--outputBase", metavar="filebase", default="codontree", type=str, help="base name for output files, def=codontree")
 parser.add_argument("--genomeIdsFile", metavar="file", type=str, nargs="*", help="file with PATRIC genome IDs, one per line (or first column of TSV)")
 parser.add_argument("--genomeGroupName", metavar="name", type=str, nargs="*", help="name of user's genome group at PATRIC")
 parser.add_argument("--genomeObjectFile", metavar="file", type=str, help="genome object (json file) to be added to ingroup")
@@ -35,12 +36,13 @@ parser.add_argument("--outputDirectory", type=str, default=".", metavar="out_dir
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtreeJar -graphic PDF CodonTree.nex CodonTree.pdf")
 parser.add_argument("--focusGenome", metavar="genome_id", type=str, help="genome to be highlighted in color in Figtree")
 parser.add_argument("--debugMode", action='store_true', help="turns on more progress output to log file")
+parser.add_argument("--authenticate", type=str, metavar="file(optional)", nargs="?", default=os.path.expanduser("~/.patric_token"), const=None, help="authenticate patric user, optionally specify token file")
 #parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and pgfams from stored file matching genomeIdsFile if it exists")
 args = parser.parse_args()
 starttime = time()
 
 if not args.outputDirectory:
-    args.outputDirectory=fileBase+"_dir/"
+    args.outputDirectory="./"
 if not args.outputDirectory.endswith("/"):
     args.outputDirectory += "/"
 if not os.path.exists(args.outputDirectory):
@@ -59,13 +61,17 @@ LOG.write("args= "+str(args)+"\n\n")
 LOG.flush()
 phylocode.LOG = LOG
 patric_api.LOG = LOG
+if args.authenticate:
+    patric_api.authenticatePatricUser(args.authenticate)
 
-subprocess.check_call(['which', args.raxmlExecutable])
-phylocode.checkMuscle()
+
+preflightTests = []
+preflightTests.append(("phylocode.which(args.raxmlExecutable)", phylocode.which(args.raxmlExecutable)))
+preflightTests.append(("phylocode.which('muscle')", phylocode.which('muscle')))
 
 ingroupIds = set() # keep unique
 if args.genomeIdsFile:
-    for filename in args.genomeIdsFile
+    for filename in args.genomeIdsFile:
         with open(filename) as F:
             for line in F:
                 m = re.match(r"(\d+\.\d+)", line)
@@ -97,15 +103,6 @@ LOG.flush()
 if len(ingroupIds) + len(optionalGenomeIds) < 4:
     LOG.write("too few genomes to build a tree with: %d"%(len(ingroupIds)+len(optionalGenomeIds)))
     sys.exit(1)
-
-# figure out a base name for ouput files
-if args.genomeIdsFile:
-    fileBase = os.path.basename(args.genomeIdsFile)
-    fileBase = re.sub("\..*", "", fileBase)
-elif args.genomeGroupName:
-    fileBase = args.genomeGroupName
-else:
-    fileBase = "codon_tree"
 
 
 # if either codons or proteins is specified, analyze just that, otherwise analyze both
@@ -168,7 +165,7 @@ genomesWithoutData = allGenomeIds - genomesWithData
 if len(genomesWithoutData):
     pgfamMatrix = patric_api.getPgfamGenomeMatrix(genomesWithoutData, pgfamMatrix)
 
-with open(args.outputDirectory+fileBase+".pgfamMatrix.txt", 'w') as F:
+with open(os.path.join(args.outputDirectory, args.outputBase+".pgfamMatrix.txt"), 'w') as F:
    patric_api.writePgfamGenomeMatrix(pgfamMatrix, F)
 
 LOG.write("got pgfams for genomes, len=%d\n"%len(pgfamMatrix))
@@ -189,7 +186,7 @@ LOG.flush()
 if not len(singleCopyPgfams):
     LOG.write("got no single copy pgfams, exiting\n")
     sys.exit(1)
-with open(args.outputDirectory+fileBase+".singlishCopyPgfams.txt", 'w') as F:
+with open(os.path.join(args.outputDirectory, args.outputBase+".singleCopyPgfams.txt"), 'w') as F:
     for pgfam in singleCopyPgfams:
         F.write(pgfam+"\n")
 
@@ -243,7 +240,7 @@ LOG.write("original_id of first prot: %s\n"%proteinAlignments.values()[0][0].ann
 LOG.flush()
 
 # generate hopefully uniq output file name base
-phyloFileBase = fileBase+"_%dtaxa"%(numTaxa)
+phyloFileBase = args.outputBase+"_%dtaxa"%(numTaxa)
 if args.analyzeCodons:
     phyloFileBase += "_%dcds"%len(codonAlignments)
 if args.analyzeProteins:
@@ -322,7 +319,7 @@ if args.analyzeProteins and args.analyzeCodons:
 
 elif args.analyzeCodons:
     phyloFileBase += "_codonAlignment"
-    phylocode.writeConcatenatedAlignmentsPhylip(codonAlignments, args.outputDirectory+phyloFileBase+".phy")
+    phylocode.writeConcatenatedAlignmentsPhylip(codonAlignments, os.path.join(args.outputDirectory, phyloFileBase+".phy"))
     with open(args.outputDirectory+phyloFileBase+".partitions", 'w') as PartitionFile:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
@@ -353,9 +350,9 @@ if not args.deferRaxml:
     if genomeObject:
         genomeIdToName[genomeObject_genomeId] = genomeObject_name+" "+genomeObject_genomeId
     originalNewick = ""
-    raxmlNewickFileName = args.outputDirectory+"RAxML_bestTree."+phyloFileBase
+    raxmlNewickFileName = os.path.join(args.outputDirectory, "RAxML_bestTree."+phyloFileBase)
     if args.bootstrapReps > 0:
-        raxmlNewickFileName = args.outputDirectory+"RAxML_bipartitions."+phyloFileBase
+        raxmlNewickFileName = os.path.join(args.outputDirectory, "RAxML_bipartitions."+phyloFileBase)
     F = open(raxmlNewickFileName)
     originalNewick = F.read()
     F.close()

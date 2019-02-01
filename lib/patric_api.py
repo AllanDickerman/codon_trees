@@ -12,22 +12,28 @@ LOG = sys.stderr
 Base_url="https://www.patricbrc.org/api/"
 
 Session = requests.Session()
-UserAtPatric = None
-if os.environ.has_key("KB_AUTH_TOKEN"):
-    LOG.write("reading auth key from environment\n")
-    Session.headers.update({ 'Authorization' : os.environ.get('KB_AUTH_TOKEN') })
-elif os.path.exists(os.path.join(os.environ.get('HOME'), ".patric_token")):
-    LOG.write("reading auth key from file\n")
-    F = open(os.path.join(os.environ.get('HOME'), ".patric_token"))
-    Session.headers.update({ 'Authorization' : F.read().rstrip() })
-    F.close()
-if "authorization" in Session.headers:
-    UserAtPatric = Session.headers["Authorization"].split(r"|")[3].split("=")[1]
-    LOG.write("Patric user = %s\n"%UserAtPatric)
 Session.headers.update({ 'accept': "text/tsv" })
 Session.headers.update({ "Content-Type": "application/rqlquery+x-www-form-urlencoded" })
 if Debug:
     LOG.write(str(Session.headers)+"\n")
+
+PatricUser = None
+
+def authenticatePatricUser(tokenFile=None):
+    if os.environ.has_key("KB_AUTH_TOKEN"):
+        LOG.write("reading auth key from environment\n")
+        Session.headers.update({ 'Authorization' : os.environ.get('KB_AUTH_TOKEN') })
+    else:
+        if not tokenFile and os.path.exists(os.path.join(os.environ.get('HOME'), ".patric_token")):
+            tokenFile = os.path.join(os.environ.get('HOME'), ".patric_token")
+        if tokenFile:
+            LOG.write("reading auth key from file\n")
+            F = open(os.path.join(os.environ.get('HOME'), ".patric_token"))
+            Session.headers.update({ 'Authorization' : F.read().rstrip() })
+            F.close()
+    if "Authorization" in Session.headers:
+        PatricUser = Session.headers["Authorization"].split(r"|")[3].split("=")[1]
+        LOG.write("Patric user = %s\n"%PatricUser)
 
 def getGenomeIdsNamesByName(name, limit='10'):
     query = "eq(genome_name,%s)"%name
@@ -39,14 +45,14 @@ def getGenomeIdsNamesByName(name, limit='10'):
     return(ret.text.replace('"', ''))
 
 def getGenomeGroupIds(genomeGroupName):
-    genomeGroupSpecifier = UserAtPatric+"/home/Genome Groups/"+genomeGroupName
+    genomeGroupSpecifier = PatricUser+"/home/Genome Groups/"+genomeGroupName
     genomeGroupSpecifier = "/"+urllib.quote(genomeGroupSpecifier)
     genomeGroupSpecifier = genomeGroupSpecifier.replace("/", "%2f")
     query = "in(genome_id,GenomeGroup("+genomeGroupSpecifier+"))"
     query += "&select(genome_id)"
     query += "&limit(10000)"
     if Debug:
-        LOG.write("requesting group %s for user %s\n"%(genomeGroupName, UserAtPatric))
+        LOG.write("requesting group %s for user %s\n"%(genomeGroupName, PatricUser))
         LOG.write("query =  %s\n"%(query))
     ret = Session.get(Base_url+"genome/", params=query)
     if Debug:
