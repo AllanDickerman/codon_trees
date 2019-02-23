@@ -14,23 +14,25 @@ Base_url="https://www.patricbrc.org/api/"
 Session = requests.Session()
 Session.headers.update({ 'accept': "text/tsv" })
 Session.headers.update({ "Content-Type": "application/rqlquery+x-www-form-urlencoded" })
-if Debug:
-    LOG.write(str(Session.headers)+"\n")
 
 PatricUser = None
 
-def authenticatePatricUser(tokenFile=None):
+def authenticateByFile(tokenFile=None):
+    if not tokenFile:
+        tokenFile = os.path.join(os.environ.get('HOME'), ".patric_token")
+    if os.path.exists(tokenFile):
+        LOG.write("reading auth key from file %s\n"%tokenFile)
+        with open(tokenFile) as F:
+            tokenString = F.read().rstrip()
+            authenticateByString(tokenString)
+
+def authenticateByEnv():
     if os.environ.has_key("KB_AUTH_TOKEN"):
         LOG.write("reading auth key from environment\n")
-        Session.headers.update({ 'Authorization' : os.environ.get('KB_AUTH_TOKEN') })
-    else:
-        if not tokenFile and os.path.exists(os.path.join(os.environ.get('HOME'), ".patric_token")):
-            tokenFile = os.path.join(os.environ.get('HOME'), ".patric_token")
-        if tokenFile:
-            LOG.write("reading auth key from file\n")
-            F = open(os.path.join(os.environ.get('HOME'), ".patric_token"))
-            Session.headers.update({ 'Authorization' : F.read().rstrip() })
-            F.close()
+        authenticateByString(os.environ.get('KB_AUTH_TOKEN'))
+
+def authenticateByString(tokenString):
+    Session.headers.update({ 'Authorization' : tokenString })
     if "Authorization" in Session.headers:
         PatricUser = Session.headers["Authorization"].split(r"|")[3].split("=")[1]
         LOG.write("Patric user = %s\n"%PatricUser)
@@ -240,7 +242,6 @@ def writePgfamGenomeMatrix(ggpMat, fileHandle):
     """
     # first collect set of all genomes
     genomeSet = set()
-    ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
     for pgfam in ggpMat:
         genomeSet.update(set(ggpMat[pgfam].keys()))
     genomes = sorted(genomeSet)
@@ -252,6 +253,24 @@ def writePgfamGenomeMatrix(ggpMat, fileHandle):
             if genome in ggpMat[pgfam]:
                 gene = ",".join(ggpMat[pgfam][genome])
             fileHandle.write("\t"+gene)
+        fileHandle.write("\n")
+
+def writePgfamGenomeCountMatrix(ggpMat, fileHandle):
+    """ write out matrix of counts per pgfam per genome to file handle 
+    """
+    # first collect set of all genomes
+    genomeSet = set()
+    for pgfam in ggpMat:
+        genomeSet.update(set(ggpMat[pgfam].keys()))
+    genomes = sorted(genomeSet)
+    fileHandle.write("PGFam\t"+"\t".join(genomes)+"\n")
+    for pgfam in ggpMat:
+        fileHandle.write(pgfam)
+        for genome in genomes:
+            count = 0
+            if genome in ggpMat[pgfam]:
+                count = len(ggpMat[pgfam][genome])
+            fileHandle.write("\t%d"%count)
         fileHandle.write("\n")
 
 def readPgfamGenomeMatrix(fileHandle):

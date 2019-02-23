@@ -8,14 +8,16 @@ from Bio.Alphabet import IUPAC
 from Bio import AlignIO
 from Bio import SeqIO
 from Bio import Alphabet
-from Bio import codonalign
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.Align import MultipleSeqAlignment
-from Bio import codonalign
 from collections import defaultdict
 import patric_api
 import StringIO
+from Bio import BiopythonExperimentalWarning
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore', BiopythonExperimentalWarning)
+    from Bio import codonalign
 
 Debug = False #shared across functions defined here
 LOG = sys.stderr
@@ -481,10 +483,12 @@ def writeConcatenatedAlignmentsPhylip(alignments, destination):
         writeOneAlignmentPhylip(alignments[alignmentId], destination, taxonIdList, outputIds=False)
 
 def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
+    if Debug:
+        LOG.write("outputCodonsProteinsPhylip, ncodonAln=%d, nprotAln=%d, destType=%s\n"%(len(codonAlignments), len(proteinAlignments), type(destination)))
     if len(codonAlignments) == 0:
         LOG.write("outputCodonsProteinsPhylip() called with zero codonAlignments()\n")
         return
-    if type(destination) == str:
+    if type(destination) == str or type(destination) == unicode:
         if Debug:
             LOG.write("outputCodonsProteinsPhylip opening file %s\n"%destination)
         destination = open(destination, "w")
