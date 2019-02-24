@@ -34,6 +34,7 @@ def authenticateByEnv():
 def authenticateByString(tokenString):
     Session.headers.update({ 'Authorization' : tokenString })
     if "Authorization" in Session.headers:
+        global PatricUser
         PatricUser = Session.headers["Authorization"].split(r"|")[3].split("=")[1]
         LOG.write("Patric user = %s\n"%PatricUser)
 
@@ -47,6 +48,7 @@ def getGenomeIdsNamesByName(name, limit='10'):
     return(ret.text.replace('"', ''))
 
 def getGenomeGroupIds(genomeGroupName):
+    LOG.write("getGenomeGroupIds(%s), PatricUser=%s\n"%(genomeGroupName, PatricUser))
     genomeGroupSpecifier = PatricUser+"/home/Genome Groups/"+genomeGroupName
     genomeGroupSpecifier = "/"+urllib.quote(genomeGroupSpecifier)
     genomeGroupSpecifier = genomeGroupSpecifier.replace("/", "%2f")

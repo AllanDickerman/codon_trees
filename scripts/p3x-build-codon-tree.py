@@ -117,10 +117,11 @@ LOG.flush()
 
 if args.genomeGroupName:
     for groupName in args.genomeGroupName:
-        LOG.write("requesting genome IDs for user group %s\n"%args.genomeGroupName)
-        ids = patric_api.getGenomeGroupIds(args.genomeGroupName)
-        LOG.write("got %d ids for %s\n"%(len(ids), args.genomeGroupName))
-        genomeIds.update(set(ids))
+        LOG.write("requesting genome IDs for user group %s\n"%groupName)
+        for group in args.genomeGroupName:
+            groupIds = patric_api.getGenomeGroupIds(groupName)
+            genomeIds.update(set(groupIds))
+            LOG.write("got %d ids for group %s, total IDs = %d\n"%(len(groupIds), groupName, len(genomeIds)))
 
 if args.optionalGenomeIdsFile:
     with open(args.optionalGenomeIdsFile) as F:
