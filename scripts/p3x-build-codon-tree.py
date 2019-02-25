@@ -33,6 +33,7 @@ parser.add_argument("--analyzeProteins", action='store_true', help="analyze only
 parser.add_argument("--threads", metavar="T", type=int, default=2, help="number of threads for raxml")
 parser.add_argument("--deferRaxml", action='store_true', help="does not raxml but provides command file")
 parser.add_argument("--writePgfamAlignments", action='store_true', help="create fasta alignment file per pgfam used for tree")
+parser.add_argument("--writePgfamMatrix", action='store_true', help="create file with table of counts of each pgfam per genome")
 parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="directory for output, create if it does not exist")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtreeJar -graphic PDF CodonTree.nex CodonTree.pdf")
 parser.add_argument("--focusGenome", metavar="genome_id", type=str, help="genome to be highlighted in color in Figtree")
@@ -194,8 +195,9 @@ genomesWithoutData = allGenomeIds - genomesWithData
 if len(genomesWithoutData):
     pgfamMatrix = patric_api.getPgfamGenomeMatrix(genomesWithoutData, pgfamMatrix)
 
-with open(os.path.join(args.outputDirectory, args.outputBase+".pgfamMatrix.txt"), 'w') as F:
-   patric_api.writePgfamGenomeCountMatrix(pgfamMatrix, F)
+if args.writePgfamMatrix:
+    with open(os.path.join(args.outputDirectory, args.outputBase+".pgfamMatrix.txt"), 'w') as F:
+       patric_api.writePgfamGenomeCountMatrix(pgfamMatrix, F)
 
 LOG.write("got pgfams for genomes, len=%d\n"%len(pgfamMatrix))
 LOG.flush()
@@ -332,7 +334,7 @@ if args.writePgfamAlignments:
     for pgfam in proteinAlignments:
         SeqIO.write(proteinAlignments[pgfam], pgfam+".faa", "fasta")
 
-with open("PgfamAlignmentStats.txt", "w") as F:
+with open(phyloFileBase+".PgfamAlignmentStats.txt", "w") as F:
     first = True
     for pgfam in proteinAlignments:
         stats = phylocode.calcAlignmentStats(proteinAlignments[pgfam])
@@ -379,7 +381,7 @@ if not args.deferRaxml:
     #remove RAxML files that clash in name, their existence blocks raxml from running
     for fl in glob.glob("RAxML_*"+phyloFileBase):
         os.remove(fl)
-    proc = subprocess.Popen(raxmlCommand)
+    proc = subprocess.Popen(raxmlCommand, stdout=LOG)
     proc.wait()
     LOG.write("raxml completed: elapsed seconds = %f\n"%(time()-starttime))
     LOG.flush()

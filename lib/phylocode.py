@@ -194,7 +194,7 @@ def generateFigtreeImage(nexusFile, outfileName, numTaxa, figtreeJarFile, imageF
         height = 600 + 15 * (numTaxa - 40) # this is an empirical correction factor to avoid taxon name overlap
         figtreeCommand.extend(['-height', str(int(height))])
     figtreeCommand.extend([nexusFile, outfileName])
-    subprocess.call(figtreeCommand)
+    subprocess.call(figtreeCommand, stdout=LOG)
 
 def checkMuscle():
     subprocess.check_call(['which', 'muscle'])
