@@ -221,16 +221,18 @@ alignedTaxa=set()
 #phylocode.generateAlignmentsForCodonsAndProteins(genesForPgfams, proteinAlignments, codonAlignments)
 for pgfamId in genesForPgfams: #genesForPgfams:
     proteinFasta = patric_api.getProteinFastaForPatricIds(genesForPgfams[pgfamId])
-    proteinSeqRecords = list(SeqIO.parse(StringIO.StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein))
-    for record in proteinSeqRecords:
-        record.annotations["genome_id"] = geneToGenomeId[record.id]
+    proteinSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO.StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein))
     if args.genomeObjectFile:
         for geneId in genesForPgfams[pgfamId]:
             if geneId in genomeObjectProteins:
-                proteinSeqRecords.append(genomeObjectProteins[geneId])
+                proteinSeqDict[geneId] = genomeObjectProteins[geneId]
+    proteinSeqRecords = list()
+    for proteinId in proteinSeqDict:
+        proteinSeqDict[proteinId].annotations["genome_id"] = geneToGenomeId[proteinId]
+        proteinSeqRecords.append(proteinSeqDict[proteinId])
     if args.debugMode:
         LOG.write("protein set for %s has %d seqs\n"%(pgfamId, len(proteinSeqRecords)))
-        SeqIO.write(proteinSeqRecords[:2], LOG, "fasta")
+        #SeqIO.write(proteinSeqRecords[0], LOG, "fasta")
     proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqRecords)
     proteinAlignment = phylocode.resolveDuplicatesPerPatricGenome(proteinAlignment)
     proteinAlignment.sort()
@@ -249,7 +251,7 @@ for pgfamId in genesForPgfams: #genesForPgfams:
                 LOG.write("dna alignment for %s has %d seqs\n"%(pgfamId, len(codonAlignment)))
                 SeqIO.write(codonSeqRecords[:2], LOG, "fasta")
     except Exception as e:
-        LOG.write("Exeption aligning codons: %s\n"%str(e))
+        LOG.write("Exception aligning codons: %s\n"%str(e))
     phylocode.relabelSequencesByGenomeId(proteinAlignment)
     for seqRecord in proteinAlignment:
         alignedTaxa.add(seqRecord.id)
@@ -385,11 +387,6 @@ if not args.deferRaxml:
     nexusFilesWritten = phylocode.generateNexusFile(originalNewick, nexusOutfileBase, nexus_template = nexus_template_file, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
     LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
 
-    #nexusOut = open(nexusOutfileName, "w")
-    #phylocode.writeTranslatedNexusTree(nexusOut, originalNewick, genomeIdToName, figtreeParameters=figtreeParams, highlightGenome=args.focusGenome)
-    #nexusOut.close()
-    #LOG.write("nexus file written to %s\n"%nexusOutfileName)
-    #LOG.flush()
     if not (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
         LOG.write("Could not find valid path to figtree.jar\n")
         args.pathToFigtreeJar = None
