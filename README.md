@@ -120,7 +120,9 @@ genome.genome_id
 ```
 
 Here is the command line used to generate the example output described below:  
- python ~/python/buildTreeModular.py --maxGenes 10 --bootstrapReps 100 --maxGenomesMissing 1 --maxAllowedDups 1 --rateModel GAMMA --proteinModel LGF --runRaxml test9_genome.ids 
+```
+python ~/python/buildTreeModular.py --maxGenes 10 --bootstrapReps 100 --maxGenomesMissing 1 --maxAllowedDups 1 --rateModel GAMMA --proteinModel LGF --runRaxml test9_genome.ids 
+```
 
 Output
 ------
