@@ -110,15 +110,17 @@ The only required argument to buildTreeModular.py is the name of a file containi
 There can be a header or not.
 These should be one per line, and can be tab-separated from subsequent fields which will be ignored.
 E.g.:  
+```
 genome.genome_id  
 1075089.3  
 1171377.3  
 1222034.3  
 1232659.5  
 1249526.3  
+```
 
 Here is the command line used to generate the example output described below:  
-python ~/python/buildTreeModular.py --maxGenes 10 --bootstrapReps 100 --maxGenomesMissing 1 --maxAllowedDups 1 --rateModel GAMMA --proteinModel LGF --runRaxml test9_genome.ids 
+ python ~/python/buildTreeModular.py --maxGenes 10 --bootstrapReps 100 --maxGenomesMissing 1 --maxAllowedDups 1 --rateModel GAMMA --proteinModel LGF --runRaxml test9_genome.ids 
 
 Output
 ------
