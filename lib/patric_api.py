@@ -68,12 +68,17 @@ def getNamesForGenomeIds(genomeIdSet):
 
 def getGenomeIdByFieldValue(queryField, queryValue):
     query = "eq(%s,%s)"%(queryField, queryValue)
-    query += "&select(genome_id,genome_name)"
+    query += "&select(genome_id)"
     req = Session.get(Base_url+"genome/", params=query) 
     if Debug:
         LOG.write("getGenomeIdsByQuery: "+req.url+"\n")
         LOG.write(req.text+"\n")
-    return req.text
+    data = req.text.split("\n")
+    genomeId = ""
+    if len(data) > 1:
+        genomeId = data[1]
+        genomeId = genomeId.replace('\"', '')
+    return genomeId
 
 def getDataForGenomes(genomeIdSet, fieldNames):
     query = "in(genome_id,(%s))"%",".join(genomeIdSet)

@@ -281,11 +281,11 @@ LOG.write("original_id of first prot: %s\n"%proteinAlignments.values()[0][0].ann
 LOG.flush()
 
 # generate hopefully unique output file name base
-phyloFileBase = args.outputBase + "_%dtaxa"%(numTaxa)
-if args.analyzeCodons:
-    phyloFileBase += "_%dcds"%len(codonAlignments)
-if args.analyzeProteins:
-    phyloFileBase += "_%dproteins"%len(proteinAlignments)
+phyloFileBase = args.outputBase # + "_%dtaxa"%(numTaxa)
+#if args.analyzeCodons:
+#   phyloFileBase += "_%dcds"%len(codonAlignments)
+#if args.analyzeProteins:
+#   phyloFileBase += "_%dproteins"%len(proteinAlignments)
 
 # change to output directory to simplify file naming
 os.chdir(args.outputDirectory)
