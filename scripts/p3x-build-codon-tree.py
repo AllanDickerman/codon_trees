@@ -93,10 +93,11 @@ LOG.write("args= "+str(args)+"\n\n")
 LOG.flush()
 phylocode.LOG = LOG
 patric_api.LOG = LOG
-if args.authenticateFile:
+
+if os.environ.has_key("KB_AUTH_TOKEN"):
+    patric_api.authenbticateByEnv()
+elif args.authenticateFile:
     patric_api.authenticateByFile(args.authenticateFile)
-else:
-    patric_api.authenticateByEnv()
 
 preflightTests = []
 preflightTests.append(("phylocode.which(args.raxmlExecutable) != None", phylocode.which(args.raxmlExecutable) != None))
@@ -383,6 +384,10 @@ if not args.deferRaxml:
         os.remove(fl)
     proc = subprocess.Popen(raxmlCommand, stdout=LOG)
     proc.wait()
+    if proc.returncode != 0:
+        LOG.write("raxml returned failure %d\n" % (proc.returncode))
+        LOG.flush()
+        sys.exit(1)
     LOG.write("raxml completed: elapsed seconds = %f\n"%(time()-starttime))
     LOG.flush()
     genomeIdToName = {}
