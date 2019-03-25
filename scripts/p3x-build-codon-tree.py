@@ -1,5 +1,6 @@
 import sys
 import re
+from math import sqrt
 import os.path
 import glob
 import argparse
@@ -21,7 +22,9 @@ parser.add_argument("--genomeObjectFile", metavar="file", type=str, help="genome
 parser.add_argument("--genomePgfamGeneFile", metavar="file", type=str, help="read geneIDs per PGFam per genome from this file")
 parser.add_argument("--optionalGenomeIdsFile", metavar="file", type=str, help="optional genome ids, one per line (or first column of TSV)")
 parser.add_argument("--maxGenes", metavar="#", type=int, default=50, help="number of genes in concatenated alignment")
-parser.add_argument("--bootstrapReps", metavar="#", type=int, default=0, help="number of raxml 'fast boostrap' replicates")
+parser.add_argument("--excessGenesProp", metavar="prop", type=float, default=0.5, help="multiplier of maxGenes to add to filter out low-scoring alignments")
+parser.add_argument("--excessGenesFixed", metavar="#", type=int, default=20, help="fixed excess genes to add to filter out low-scoring alignments")
+parser.add_argument("--bootstrapReps", metavar="#", type=int, default=100, help="number of raxml 'fast boostrap' replicates")
 parser.add_argument("--maxGenomesMissing", metavar="#", type=int, default=0, help="genomes allowed to lack a member of any homolog group")
 parser.add_argument("--maxAllowedDups", metavar="maxDups", type=int, default=0, help="duplicated gene occurrences allowed within homolog group")
 parser.add_argument("--endGapTrimThreshold", metavar="maxPropGaps", type=float, default=0.5, help="stringency of end-gap trimming, lower for less trimming")
@@ -38,8 +41,8 @@ parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="dire
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtreeJar -graphic PDF CodonTree.nex CodonTree.pdf")
 parser.add_argument("--focusGenome", metavar="genome_id", type=str, help="genome to be highlighted in color in Figtree")
 parser.add_argument("--debugMode", action='store_true', help="turns on more progress output to log file")
-parser.add_argument("--authenticateFile", type=str, metavar="file(optional)", nargs="?", default=os.path.expanduser("~/.patric_token"), help="authenticate patric user by token file")
-parser.add_argument("--authenticateEnv", action='store_true', help="authenticate using environment variable KB_AUTH_TOKEN")
+parser.add_argument("--authToken", type=str, help="patric authentication token")
+parser.add_argument("--authenticate", action='store_true', help="activate attempt to authenticate")
 #parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and pgfams from stored file matching genomeIdsFile if it exists")
 args = parser.parse_args()
 starttime = time()
@@ -93,10 +96,13 @@ LOG.write("args= "+str(args)+"\n\n")
 LOG.flush()
 phylocode.LOG = LOG
 patric_api.LOG = LOG
-if args.authenticateFile:
-    patric_api.authenticateByFile(args.authenticateFile)
-else:
-    patric_api.authenticateByEnv()
+if args.authToken:
+    patric_api.authenticateByString(args.authToken)
+elif args.authenticate:
+    if os.environ.has_key("KB_AUTH_TOKEN"):
+        patric_api.authenticateByEnv()
+    elif args.authenticateFile:
+        patric_api.authenticateByFile()
 
 preflightTests = []
 preflightTests.append(("phylocode.which(args.raxmlExecutable) != None", phylocode.which(args.raxmlExecutable) != None))
@@ -210,13 +216,6 @@ preflightTests.append(("Num genomes - maxGenomesMissing >= 4", len(genomeIds) - 
 singleCopyPgfams = phylocode.selectSingleCopyPgfams(pgfamMatrix, genomeIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
 
 LOG.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))
-if len(singleCopyPgfams) > args.maxGenes:
-    singleCopyPgfams=singleCopyPgfams[0:args.maxGenes]
-    LOG.write("\tselecting top single-family genes: %d\n"%len(singleCopyPgfams))
-LOG.flush()
-with open(os.path.join(args.outputDirectory, args.outputBase+".singleCopyPgfams.txt"), 'w') as F:
-    for pgfam in singleCopyPgfams:
-        F.write(pgfam+"\n")
 
 preflightTests.append(("single copy pgfams > 0", len(singleCopyPgfams) > 0))
 ## perform preflight test
@@ -231,8 +230,13 @@ with open(os.path.join(args.outputDirectory, args.outputBase+".preflight"), 'w')
         F.close()
         sys.exit(1)
 
+maxGenesWithExcess = int(args.maxGenes * (1+args.excessGenesProp) + args.excessGenesFixed)
+if len(singleCopyPgfams) > maxGenesWithExcess:
+    singleCopyPgfams=singleCopyPgfams[0:maxGenesWithExcess]
+    LOG.write("\tevaluating alignments of %d single-family genes, excess of %d\n"%(len(singleCopyPgfams), maxGenesWithExcess - args.maxGenes))
+
 proteinAlignments = {}
-codonAlignments = {}
+alignmentScore = {}
 alignedTaxa=set()
 for pgfamId in singleCopyPgfams:
     geneIdSet = set()
@@ -251,6 +255,27 @@ for pgfamId in singleCopyPgfams:
     proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqDict.values())
     proteinAlignment = phylocode.resolveDuplicatesPerPatricGenome(proteinAlignment)
     proteinAlignment.sort()
+    proteinAlignments[pgfamId] = proteinAlignment
+    alignmentStats = phylocode.calcAlignmentStats(proteinAlignment)
+    # dividing by sqrt(alignment length) yields result intermediate between sum_squared_freq and mean_squared_freq (where squared_freq is the within-column sum of squared state (letter, amino acid) frequency
+    alignmentScore[pgfamId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
+
+LOG.write("protein alignments completed. num prot als = %d\n"%(len(proteinAlignments)))
+# select top alignments by score
+singleCopyPgfams = sorted(alignmentScore, key=alignmentScore.get, reverse=True)
+
+with open(os.path.join(args.outputDirectory, args.outputBase+".singleCopyPgfams.txt"), 'w') as F:
+    F.write("Rank\tPGFam\tScore\tUsed\n")
+    for i, pgfam in enumerate(singleCopyPgfams):
+        F.write("%d\t%s\t%.3f\t%s\n"%(i, pgfam, alignmentScore[pgfam], str(i < args.maxGenes)))
+
+if len(singleCopyPgfams) > args.maxGenes:
+    singleCopyPgfams=singleCopyPgfams[0:args.maxGenes]
+    LOG.write("\tselecting top %d single-family genes based on alignment score\n"%len(singleCopyPgfams))
+
+codonAlignments = {}
+for pgfamId in singleCopyPgfams:
+    proteinAlignment = proteinAlignments[pgfamId]
     if args.debugMode:
         LOG.write("alignment for %s has %d seqs\n"%(pgfamId, len(proteinAlignment)))
     try:
@@ -270,12 +295,14 @@ for pgfamId in singleCopyPgfams:
     phylocode.relabelSequencesByGenomeId(proteinAlignment)
     for seqRecord in proteinAlignment:
         alignedTaxa.add(seqRecord.id)
+    # trim protein alignment after codon alignment if trimming enabled
     if args.endGapTrimThreshold:
         proteinAlignment = phylocode.trimEndGaps(proteinAlignment, args.endGapTrimThreshold)
-    proteinAlignments[pgfamId] = proteinAlignment
+        proteinAlignments[pgfamId] = proteinAlignment 
+
 numTaxa=len(alignedTaxa)
 
-LOG.write("protein and codon alignments completed. num prot als = %d, num codon als = %d\n"%(len(proteinAlignments), len(codonAlignments)))
+LOG.write("codon alignments completed. num codon als = %d\n"%(len(codonAlignments)))
 LOG.write("First prot alignment has %d elements\n"%len(proteinAlignments.values()[0]))
 LOG.write("original_id of first prot: %s\n"%proteinAlignments.values()[0][0].annotations['original_id'])
 LOG.flush()
@@ -336,10 +363,10 @@ if args.writePgfamAlignments:
 
 with open(phyloFileBase+".PgfamAlignmentStats.txt", "w") as F:
     first = True
-    for pgfam in proteinAlignments:
+    for pgfam in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
         stats = phylocode.calcAlignmentStats(proteinAlignments[pgfam])
         if first:
-            F.write("PGFam\t"+"\t".join(sorted(stats.keys()))+"\n")
+            F.write("PGFam\t"+"\t".join(sorted(stats.keys()))+"\tUsedInAnalysis\n")
             first = False
         F.write(pgfam)
         for key in sorted(stats):
@@ -348,7 +375,14 @@ with open(phyloFileBase+".PgfamAlignmentStats.txt", "w") as F:
                 F.write("\t%d"%stats[key])
             else:
                 F.write("\t%.6f"%stats[key])
+        F.write("\t"+str(pgfam in singleCopyPgfams))
         F.write("\n")
+
+# change proteinAlignments to only include selected ones
+selectedAlignments = {}
+for pgfam in singleCopyPgfams:
+    selectedAlignments[pgfam] = proteinAlignments[pgfam]
+proteinAlignments = selectedAlignments
 
 # finally, output concatenated protein and/or DNA alignment and partitions and raxml command to appropriate files
 raxmlCommand=''
