@@ -229,7 +229,8 @@ def calcAlignmentStats(alignment):
         for residue in stateCount:
             freq = stateCount[residue]/float(stats['num_seqs'])
             sumSquaredFreq += freq*freq
-    stats['squared_freq'] = sumSquaredFreq/stats['num_pos']
+    stats['sum_squared_freq'] = sumSquaredFreq
+    stats['mean_squared_freq'] = sumSquaredFreq/stats['num_pos']
     stats['gaps'] = numGaps
     stats['prop_gaps'] = numGaps/(float(numGaps+numNonGaps))
     #stats['non_gaps'] = numNonGaps
