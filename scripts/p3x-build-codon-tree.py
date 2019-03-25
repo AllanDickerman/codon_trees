@@ -41,8 +41,8 @@ parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="dire
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtreeJar -graphic PDF CodonTree.nex CodonTree.pdf")
 parser.add_argument("--focusGenome", metavar="genome_id", type=str, help="genome to be highlighted in color in Figtree")
 parser.add_argument("--debugMode", action='store_true', help="turns on more progress output to log file")
-parser.add_argument("--authenticateFile", type=str, metavar="file(optional)", nargs="?", default=os.path.expanduser("~/.patric_token"), help="authenticate patric user by token file")
-parser.add_argument("--authenticateEnv", action='store_true', help="authenticate using environment variable KB_AUTH_TOKEN")
+parser.add_argument("--authToken", type=str, help="patric authentication token")
+parser.add_argument("--authenticate", action='store_true', help="activate attempt to authenticate")
 #parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and pgfams from stored file matching genomeIdsFile if it exists")
 args = parser.parse_args()
 starttime = time()
@@ -96,10 +96,13 @@ LOG.write("args= "+str(args)+"\n\n")
 LOG.flush()
 phylocode.LOG = LOG
 patric_api.LOG = LOG
-if args.authenticateFile:
-    patric_api.authenticateByFile(args.authenticateFile)
-else:
-    patric_api.authenticateByEnv()
+if args.authToken:
+    patric_api.authenticateByString(args.authToken)
+elif args.authenticate:
+    if os.environ.has_key("KB_AUTH_TOKEN"):
+        patric_api.authenticateByEnv()
+    elif args.authenticateFile:
+        patric_api.authenticateByFile()
 
 preflightTests = []
 preflightTests.append(("phylocode.which(args.raxmlExecutable) != None", phylocode.which(args.raxmlExecutable) != None))
