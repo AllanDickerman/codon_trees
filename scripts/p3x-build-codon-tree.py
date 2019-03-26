@@ -29,20 +29,21 @@ parser.add_argument("--maxGenomesMissing", metavar="#", type=int, default=0, hel
 parser.add_argument("--maxAllowedDups", metavar="maxDups", type=int, default=0, help="duplicated gene occurrences allowed within homolog group")
 parser.add_argument("--endGapTrimThreshold", metavar="maxPropGaps", type=float, default=0.5, help="stringency of end-gap trimming, lower for less trimming")
 parser.add_argument("--raxmlExecutable", metavar="program_name", type=str, default="raxml", help="program to call, possibly with path")
-parser.add_argument("--rateModel", metavar="rateModel", type=str, choices = ['CAT', 'GAMMA'], default="CAT", help="variable rate category model CAT|GAMMA")
-parser.add_argument("--proteinModel", metavar="substModel", type=str, default="WAGF", help="raxml protein substitution model")
-parser.add_argument("--analyzeCodons", action='store_true', help="analyze only codons (ignore amino acids)")
+parser.add_argument("--rateModel", metavar="model", type=str, choices = ['CAT', 'GAMMA'], default="CAT", help="variable rate category model CAT|GAMMA")
+parser.add_argument("--proteinModel", metavar="model", type=str, default="WAGF", help="raxml protein substitution model")
+parser.add_argument("--analyzeCodons", action='store_true', help="analyze only codon nucleotides")
 parser.add_argument("--analyzeProteins", action='store_true', help="analyze only amino acids")
-parser.add_argument("--threads", metavar="T", type=int, default=2, help="number of threads for raxml")
-parser.add_argument("--deferRaxml", action='store_true', help="does not raxml but provides command file")
-parser.add_argument("--writePgfamAlignments", action='store_true', help="create fasta alignment file per pgfam used for tree")
-parser.add_argument("--writePgfamMatrix", action='store_true', help="create file with table of counts of each pgfam per genome")
-parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="directory for output, create if it does not exist")
-parser.add_argument("--pathToFigtreeJar", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtreeJar -graphic PDF CodonTree.nex CodonTree.pdf")
-parser.add_argument("--focusGenome", metavar="genome_id", type=str, help="genome to be highlighted in color in Figtree")
-parser.add_argument("--debugMode", action='store_true', help="turns on more progress output to log file")
-parser.add_argument("--authToken", type=str, help="patric authentication token")
-parser.add_argument("--authenticate", action='store_true', help="activate attempt to authenticate")
+parser.add_argument("--threads", metavar="T", type=int, default=2, help="threads for raxml")
+parser.add_argument("--deferRaxml", action='store_true', help="does not run raxml")
+parser.add_argument("--writePgfamAlignments", action='store_true', help="write fasta alignment per pgfam used for tree")
+parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of counts per pgfam per genome")
+parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="for output, create if needed")
+parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="to generate PDF: java -jar path.jar -graphic PDF CodonTree.nex CodonTree.pdf")
+parser.add_argument("--focusGenome", metavar="id", type=str, help="to be highlighted in color in Figtree")
+parser.add_argument("--debugMode", action='store_true', help="more output to log file")
+parser.add_argument("--authToken", metavar="STRING", type=str, help="patric authentication token")
+parser.add_argument("--ignoreAuthEnv", action='store_true', help="turn off authorization by environmental variable")
+parser.add_argument("--ignoreAuthRC", action='store_true', help="turn off authorization by file")
 #parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and pgfams from stored file matching genomeIdsFile if it exists")
 args = parser.parse_args()
 starttime = time()
@@ -96,13 +97,28 @@ LOG.write("args= "+str(args)+"\n\n")
 LOG.flush()
 phylocode.LOG = LOG
 patric_api.LOG = LOG
+
 if args.authToken:
+    if args.debugMode:
+        LOG.write("authorizing by passed token: %s\n"%args.authToken)
     patric_api.authenticateByString(args.authToken)
-elif args.authenticate:
+if not patric_api.PatricUser and not args.ignoreAuthEnv:
     if os.environ.has_key("KB_AUTH_TOKEN"):
-        patric_api.authenticateByEnv()
-    elif args.authenticateFile:
-        patric_api.authenticateByFile()
+        if args.debugMode:
+            LOG.write("reading auth key from environment\n")
+        patric_api.authenticateByString(os.environ.get('KB_AUTH_TOKEN'))
+    elif args.debugMode:
+        LOG.write("environment variable for authorization not found\n")
+if not patric_api.PatricUser and not args.ignoreAuthRC:
+    tokenFile = os.path.join(os.environ.get('HOME'), ".patric_token")
+    if os.path.exists(tokenFile):
+        LOG.write("reading auth key from file %s\n"%tokenFile)
+        with open(tokenFile) as F:
+            tokenString = F.read().rstrip()
+            patric_api.authenticateByString(tokenString)
+    elif args.debugMode:
+        LOG.write("authorization file %s not found\n"%tokenFile)
+LOG.write("Patric User = %s\n"%patric_api.PatricUser)
 
 preflightTests = []
 preflightTests.append(("phylocode.which(args.raxmlExecutable) != None", phylocode.which(args.raxmlExecutable) != None))
@@ -123,6 +139,8 @@ if args.genomeObjectFile:
 LOG.flush()
 
 if args.genomeGroupName:
+    if not patric_api.PatricUser:
+        raise Exception("No patric user is defined, required for using genome group.\n")
     for groupName in args.genomeGroupName:
         LOG.write("requesting genome IDs for user group %s\n"%groupName)
         for group in args.genomeGroupName:
@@ -205,6 +223,13 @@ if args.writePgfamMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".pgfamMatrix.txt"), 'w') as F:
        patric_api.writePgfamGenomeCountMatrix(pgfamMatrix, F)
 
+genesPerGenome = {}
+for genome in genomeIds:
+    genesPerGenome[genome] = 0
+for pgfam in pgfamMatrix:
+    for genome in pgfamMatrix[pgfam]:
+        genesPerGenome[genome] += 1
+
 LOG.write("got pgfams for genomes, len=%d\n"%len(pgfamMatrix))
 LOG.flush()
 
@@ -216,6 +241,13 @@ preflightTests.append(("Num genomes - maxGenomesMissing >= 4", len(genomeIds) - 
 singleCopyPgfams = phylocode.selectSingleCopyPgfams(pgfamMatrix, genomeIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
 
 LOG.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))
+
+singleCopyGenesPerGenome = {}
+for genome in genomeIds:
+    singleCopyGenesPerGenome[genome] = 0
+for pgfam in singleCopyPgfams:
+    for genome in pgfamMatrix[pgfam]:
+        singleCopyGenesPerGenome[genome] += 1
 
 preflightTests.append(("single copy pgfams > 0", len(singleCopyPgfams) > 0))
 ## perform preflight test
@@ -272,6 +304,18 @@ with open(os.path.join(args.outputDirectory, args.outputBase+".singleCopyPgfams.
 if len(singleCopyPgfams) > args.maxGenes:
     singleCopyPgfams=singleCopyPgfams[0:args.maxGenes]
     LOG.write("\tselecting top %d single-family genes based on alignment score\n"%len(singleCopyPgfams))
+
+filteredSingleCopyGenesPerGenome = {}
+for genome in genomeIds:
+    filteredSingleCopyGenesPerGenome[genome] = 0
+for pgfam in singleCopyPgfams:
+    for genome in pgfamMatrix[pgfam]:
+        filteredSingleCopyGenesPerGenome[genome] += 1
+
+with open(os.path.join(args.outputDirectory, args.outputBase+".genesPerGenome.txt"), 'w') as F:
+    F.write("Genome\tAllGenes\tSingleCopy\tFiltered_SingleCopy\n")
+    for genome in genomeIds:
+        F.write("%s\t%d\t%d\t%d\n"%(genome, genesPerGenome[genome], singleCopyGenesPerGenome[genome], filteredSingleCopyGenesPerGenome[genome]))
 
 codonAlignments = {}
 for pgfamId in singleCopyPgfams:
@@ -383,6 +427,10 @@ selectedAlignments = {}
 for pgfam in singleCopyPgfams:
     selectedAlignments[pgfam] = proteinAlignments[pgfam]
 proteinAlignments = selectedAlignments
+
+# it is possible all codon alignments failed, remove from intent to analyze
+if len(codonAlignments) == 0:
+    args.analyzeCodons = False
 
 # finally, output concatenated protein and/or DNA alignment and partitions and raxml command to appropriate files
 raxmlCommand=''
