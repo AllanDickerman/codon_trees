@@ -296,11 +296,6 @@ LOG.write("protein alignments completed. num prot als = %d\n"%(len(proteinAlignm
 # select top alignments by score
 singleCopyPgfams = sorted(alignmentScore, key=alignmentScore.get, reverse=True)
 
-with open(os.path.join(args.outputDirectory, args.outputBase+".singleCopyPgfams.txt"), 'w') as F:
-    F.write("Rank\tPGFam\tScore\tUsed\n")
-    for i, pgfam in enumerate(singleCopyPgfams):
-        F.write("%d\t%s\t%.3f\t%s\n"%(i, pgfam, alignmentScore[pgfam], str(i < args.maxGenes)))
-
 if len(singleCopyPgfams) > args.maxGenes:
     singleCopyPgfams=singleCopyPgfams[0:args.maxGenes]
     LOG.write("\tselecting top %d single-family genes based on alignment score\n"%len(singleCopyPgfams))
@@ -348,7 +343,6 @@ numTaxa=len(alignedTaxa)
 
 LOG.write("codon alignments completed. num codon als = %d\n"%(len(codonAlignments)))
 LOG.write("First prot alignment has %d elements\n"%len(proteinAlignments.values()[0]))
-LOG.write("original_id of first prot: %s\n"%proteinAlignments.values()[0][0].annotations['original_id'])
 LOG.flush()
 
 # generate hopefully unique output file name base
@@ -405,7 +399,7 @@ if args.writePgfamAlignments:
     for pgfam in proteinAlignments:
         SeqIO.write(proteinAlignments[pgfam], pgfam+".faa", "fasta")
 
-with open(phyloFileBase+".PgfamAlignmentStats.txt", "w") as F:
+with open(phyloFileBase+".pgfamAlignmentStats.txt", "w") as F:
     first = True
     for pgfam in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
         stats = phylocode.calcAlignmentStats(proteinAlignments[pgfam])
@@ -478,6 +472,9 @@ if not args.deferRaxml:
         raxmlNewickFileName = "RAxML_bipartitions."+phyloFileBase
     F = open(raxmlNewickFileName)
     originalNewick = F.read()
+    F.close()
+    F = open(phyloFileBase + "_treeWithGenomeIds.nwk", 'w')
+    F.write(originalNewick)
     F.close()
     renamedNewick = phylocode.relabelNewickTree(originalNewick, genomeIdToName)
     renamedNewickFile = phyloFileBase+"_treeWithGenomeNames.nwk"
