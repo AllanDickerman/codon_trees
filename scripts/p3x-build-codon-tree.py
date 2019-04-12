@@ -39,6 +39,7 @@ parser.add_argument("--writePgfamAlignments", action='store_true', help="write f
 parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of counts per pgfam per genome")
 parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="for output, create if needed")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="to generate PDF: java -jar path.jar -graphic PDF CodonTree.nex CodonTree.pdf")
+parser.add_argument("--html", action='store_true', help="generate html report")
 parser.add_argument("--focusGenome", metavar="id", type=str, help="to be highlighted in color in Figtree")
 parser.add_argument("--debugMode", action='store_true', help="more output to log file")
 parser.add_argument("--authToken", metavar="STRING", type=str, help="patric authentication token")
@@ -263,6 +264,7 @@ if len(singleCopyPgfams) > maxGenesWithExcess:
     LOG.write("\tevaluating alignments of %d single-family genes, excess of %d\n"%(len(singleCopyPgfams), maxGenesWithExcess - args.maxGenes))
 
 proteinAlignments = {}
+proteinAlignmentStats = {}
 alignmentScore = {}
 alignedTaxa=set()
 for pgfamId in singleCopyPgfams:
@@ -286,6 +288,7 @@ for pgfamId in singleCopyPgfams:
     alignmentStats = phylocode.calcAlignmentStats(proteinAlignment)
     # dividing by sqrt(alignment length) yields result intermediate between sum_squared_freq and mean_squared_freq (where squared_freq is the within-column sum of squared state (letter, amino acid) frequency
     alignmentScore[pgfamId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
+    proteinAlignmentStats[pgfamId] = alignmentStats
 
 LOG.write("protein alignments completed. num prot als = %d\n"%(len(proteinAlignments)))
 # select top alignments by score
@@ -414,7 +417,7 @@ filesToMoveToDetailsFolder.append(alignmentStatsFile)
 with open(alignmentStatsFile, "w") as F:
     first = True
     for pgfam in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
-        stats = phylocode.calcAlignmentStats(proteinAlignments[pgfam])
+        stats = proteinAlignmentStats[pgfam]
         if first:
             F.write("PGFam\t"+"\t".join(sorted(stats.keys()))+"\tUsedInAnalysis\n")
             first = False
@@ -476,6 +479,7 @@ with open(raxmlCommandFile, 'w') as F:
     F.write(" ".join(raxmlCommand)+"\n")
 filesToMoveToDetailsFolder.append(phyloFileBase+".raxmlCommand.sh")
 
+svgTreeImage = None
 if not args.deferRaxml:
     #remove RAxML files that clash in name, their existence blocks raxml from running
     for fl in glob.glob("RAxML_*"+phyloFileBase):
@@ -511,7 +515,6 @@ if not args.deferRaxml:
     LOG.write("codonTree newick relabeled with genome names written to "+renamedNewickFile+"\n")
     LOG.flush()
 
-
     if args.pathToFigtreeJar is not None:
         LOG.write("Path to figtree jar specified as %s\n"%args.pathToFigtreeJar)
         if not os.path.exists(args.pathToFigtreeJar):
@@ -526,19 +529,15 @@ if not args.deferRaxml:
                     imageFile = phylocode.generateFigtreeImage(nexusFile, numTaxa=len(allGenomeIds), figtreeJar=args.pathToFigtreeJar, imageFormat=imageFormat)
                     if "_tipsAligned" in nexusFile:
                         filesToMoveToDetailsFolder.append(imageFile)
-                LOG.write("created figtree figure: %s\n"%imageFile)
+                    if imageFormat == "SVG" and not svgTreeImage:
+                        svgTreeImage = imageFile
+                    LOG.write("created figtree figure: %s\n"%imageFile)
 
 LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(time()))+"\n")
 LOG.write("Total job duration %d seconds\n"%(time()-starttime))
         
-analysisStatsFile = phyloFileBase+".analysisStats"
 
-detailsDirectory = "detail_files"
-if not os.path.isdir(detailsDirectory):
-    if os.path.exists(detailsDirectory):
-        os.remove(detailsDirectory)
-    os.mkdir(detailsDirectory)
-filesToMoveToDetailsFolder.append(analysisStatsFile)
+analysisStatsFile = phyloFileBase+".analysisStats"
 OUT = open(analysisStatsFile, 'w')
 OUT.write("Statistics for CodonTree Analysis\n")
 OUT.write("Num_genomes\t%s\n"%numTaxa)
@@ -550,9 +549,69 @@ OUT.write("PGFams\t%s\n"%",".join(sorted(proteinAlignments)))
 OUT.write("command_line\t%s\n"%" ".join(raxmlCommand))
 OUT.write("Total job duration %d seconds\n"%(time()-starttime))
 OUT.close()
+filesToMoveToDetailsFolder.append(analysisStatsFile)
+
+
+if args.html:
+    try:
+        raxmlDuration = re.search("Overall execution time for full ML analysis: (.*) secs", open("RAxML_info.codontree").read()).group(1)
+    except:
+        pass
+    htmlFile = os.path.abspath(args.outputBase+"_report.html")
+    HTML = open(htmlFile, 'w')
+    HTML.write("<h1>Phylogenetic Tree Report</h1>\n")
+    if svgTreeImage is not None and os.path.exists(svgTreeImage):
+        HTML.write("<h2>Rendered Tree</h2>\n")
+        HTML.write(open(svgTreeImage).read()+"\n\n")
+    HTML.write("<h2>Tree Analysis Statistics</h2>\n<table border='1'>\n")
+    HTML.write("<tr><th>%s</th><td>%d</td></tr>\n"%("Num_genomes", len(genomeIds)))
+    HTML.write("<tr><th>%s</th><td>%d</td></tr>\n"%("Num_single_copy_genes", len(singleCopyPgfams)))
+    HTML.write("<tr><th>%s</th><td>%d</td></tr>\n"%("Num_protein_alignments", len(proteinAlignments)))
+    HTML.write("<tr><th>%s</th><td>%d</td></tr>\n"%("Num_aligned_amino_acids", proteinPositions))
+    HTML.write("<tr><th>%s</th><td>%d</td></tr>\n"%("Num_CDS_alignments", len(codonAlignments)))
+    HTML.write("<tr><th>%s</th><td>%d</td></tr>\n"%("Num_aligned_nucleotides", codonPositions))
+    if raxmlDuration:
+        HTML.write("<tr><th>%s</th><td>%s seconds</td></tr>\n"%("RAxML Duration", raxmlDuration))
+    HTML.write("<tr><th>%s</th><td>%.1f seconds</td></tr>\n"%("Total Job Duration", time()-starttime))
+    HTML.write("</table>\n\n")
+
+    HTML.write("<h2>RAxML Command Line</h2>"+" ".join(raxmlCommand))
+
+    HTML.write("<h2>Genome Statistics</h2>\n<table border='1'>\n")
+    HTML.write("<tr><th>GenomeId</th><th>Total Genes</th><th>Single Copy</th><th>Filtered</th><th>Name</th></tr>\n")
+    for genome in sorted(genesPerGenome, key=genesPerGenome.get):
+        HTML.write("<tr><td>%s</td><td>%d</td><td>%d</td><td>%d</td><td>%s</td></tr>"%(genome, genesPerGenome[genome], singleCopyGenesPerGenome[genome], filteredSingleCopyGenesPerGenome[genome], genomeIdToName[genome]))
+    HTML.write("</table>\n\n")
+
+
+    HTML.write("<h2>Gene Family Statistics</h2>\n<table border='1'>\n")
+    first = True
+    for pgfam in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
+        stats = proteinAlignmentStats[pgfam]
+        if first:
+            cols = sorted(stats.keys()) 
+            HTML.write("<tr><th>PGFam</th><th>Score</th><th>"+"</th><th>".join(cols)+"</th><th>UsedInAnalysis</th></tr>\n")
+            first = False
+        HTML.write("<tr><td>%s</td><td>%.3f</td>"%(pgfam, alignmentScore[pgfam]))
+        for key in cols:
+            val = stats[key]
+            if isinstance(val,int):
+                HTML.write("<td>%d</td>"%stats[key])
+            else:
+                HTML.write("<td>%.3f</td>"%stats[key])
+        HTML.write("<td>%s</td></tr>\n"%str(pgfam in singleCopyPgfams))
+    HTML.write("</table>\n")
+    HTML.write("</html>\n")
+    HTML.close()
+
 LOG.write("output written to directory %s\n"%args.outputDirectory)
-LOG.write("details files moved to subdirectory %s\n"%detailsDirectory)
 sys.stdout.write("\n")
+detailsDirectory = "detail_files"
+LOG.write("details files moved to subdirectory %s\n"%detailsDirectory)
+if not os.path.isdir(detailsDirectory):
+    if os.path.exists(detailsDirectory):
+        os.remove(detailsDirectory)
+    os.mkdir(detailsDirectory)
 numMoved=0
 for fn in filesToMoveToDetailsFolder:
     LOG.write("\t"+fn+"\t"+os.path.join(detailsDirectory, fn)+"\n")

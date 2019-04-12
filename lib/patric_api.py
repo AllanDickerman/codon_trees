@@ -194,6 +194,19 @@ def getProteinsFastaForGenomeId(genomeId):
         idsFixedFasta += line
     return idsFixedFasta
 
+def getProductsForPgfams(pgfams):
+    retval = {}
+    query="in(pgfam_id,"+",".join(pgfams)+")&select(pgfam_id,product)"
+    response = Session.get(Base_url+"genome_feature/", params=query) #, 
+    if Debug:
+        LOG.write("    response URL: %s\n"%response.url)
+        LOG.write("    len(response.text)= %d\n"%len(response.text))
+    for line in response.text.split("\n"):
+        line = line.replace('"','')
+        pgfam, product = line.split("\t")
+        retval[pgfam] = product
+    return retval
+
 def getPatricGenesPgfamsForGenomeSet(genomeIdSet):
     if Debug:
         LOG.write("getPatricGenesPgfamsForGenomeSet() called for %d genomes\n"%len(genomeIdSet))

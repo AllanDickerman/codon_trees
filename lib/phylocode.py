@@ -155,12 +155,14 @@ def readFigtreeParameters(filename):
 def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "both", focus_genome = None, genomeIdToName=None):
     figtreeParams={}
     if not nexus_template:
+        LOG.write("Look for figtree.nex template in sys.path directories\n")
         for dirname in sys.path: # should be in .../codon_trees/lib
             if os.path.isfile(os.path.join(dirname, "figtree.nex")):
                 nexus_template_file = os.path.join(dirname, "figtree.nex")
+                LOG.write("Found figtree template file: %s\n"%nexus_template)
     # read a model figtree nexus file
     if nexus_template and os.path.exists(nexus_template):
-        LOG.write("Found figtree template file: %s\n"%nexus_template)
+        LOG.write("Read figtree template file: %s\n"%nexus_template)
         figtreeParams = readFigtreeParameters(nexus_template)
     genomeIds = re.findall("[(,]([^(,):]+)[,:)]", newick)
     if not genomeIdToName:
@@ -168,6 +170,14 @@ def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "
     for genomeId, genomeName in patric_api.getNamesForGenomeIds(genomeIds):
         if genomeId not in genomeIdToName:
             genomeIdToName[genomeId] = genomeName+" "+genomeId
+    figtreeParams["trees.rooting"]="true"
+    figtreeParams["trees.rootingType"]="Midpoint"
+    figtreeParams["trees.order"]="true"
+    figtreeParams["trees.orderType"]="increasing"
+    figtreeParams["tipLabels.fontName"]="sanserif"
+    figtreeParams["tipLabels.fontSize"]=14
+    figtreeParams["tipLabels.fontStyle"]=0
+    figtreeParams["tipLabels.isShown"]="true"
     filesWritten=[]
     if align_tips in ("no", "both"):
         figtreeParams['rectilinearLayout.alignTipLabels'] = 'false'
@@ -183,19 +193,19 @@ def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "
         filesWritten.append(outfileBase+"_tipsAligned.nex")
     return filesWritten
 
-def generateFigtreeImage(nexusFileName, numTaxa=0, figtreeJar=None, imageFormat="PDF"):
+def generateFigtreeImage(nexusFile, numTaxa=0, figtreeJar=None, imageFormat="PDF"):
     if Debug:
         LOG.write("generateTreeFigure(%s, %d, figtreeJarFile=%s, imageFormat=%s)\n"%(nexusFile, numTaxa, figtreeJar, imageFormat))
     if imageFormat not in ('PDF', 'SVG', 'PNG', 'JPEG'):
         raise Exception("imageFormat %s not in ('PDF', 'SVG', 'PNG', 'JPEG')"%imageFormat)
-    imageFileName = nexusFileName
-    imageFileName = nexusFileName.replace(".nex", ".")
+    imageFileName = nexusFile
+    imageFileName = nexusFile.replace(".nex", ".")
     imageFileName += imageFormat.lower()
     figtreeCommand = ['java',  '-jar', figtreeJar, '-graphic', imageFormat]
     if numTaxa > 40:
         height = 600 + 15 * (numTaxa - 40) # this is an empirical correction factor to avoid taxon name overlap
         figtreeCommand.extend(['-height', str(int(height))])
-    figtreeCommand.extend([nexusFileName, imageFileName])
+    figtreeCommand.extend([nexusFile, imageFileName])
     subprocess.call(figtreeCommand, stdout=LOG)
     return imageFileName
 
