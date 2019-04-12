@@ -517,19 +517,6 @@ if not args.deferRaxml:
         if not os.path.exists(args.pathToFigtreeJar):
             LOG.write("jarfile path not valid\n")
         else:
-            # Search for the template file figtree.nex in the same directories
-            # as our library code, somewhere in sys.path.
-            nexus_template_file = None
-            for dirname in sys.path:
-                if os.path.isfile(os.path.join(dirname, "figtree.nex")):
-                    nexus_template_file = os.path.join(dirname, "figtree.nex")
-            if os.path.exists(nexus_template_file):
-                figtreeParams = phylocode.readFigtreeParameters(nexus_template_file)
-                LOG.write("Found figtree template file: %s\n"%nexus_template_file)
-            else:
-                figtreeParams = {}
-                LOG.write("Could not find valid template nexus file.\n")
-                LOG.flush()
             nexusFilesWritten = phylocode.generateNexusFile(originalNewick, phyloFileBase, nexus_template = None, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
             LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
             if len(nexusFilesWritten) > 1:

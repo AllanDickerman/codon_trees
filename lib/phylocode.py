@@ -142,12 +142,12 @@ def readFigtreeParameters(filename):
     retval = {}
     inFigtreeBlock = False
     for line in infile:
-        if re.search("begin figtree", line):
+        if re.search("begin figtree", line, re.IGNORECASE):
             inFigtreeBlock = True
         if re.search(r"^end;", line):
             inFigtreeBlock = False
         if inFigtreeBlock:
-            m = re.search(r"set\s+(\S.*)=(\S.*);", line)
+            m = re.search(r"set\s+(\S.*)=(\S.*);", line, re.IGNORECASE)
             if m:
                 retval[m.group(1)] = m.group(2)
     return retval
@@ -161,7 +161,6 @@ def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "
     # read a model figtree nexus file
     if nexus_template and os.path.exists(nexus_template):
         LOG.write("Found figtree template file: %s\n"%nexus_template)
-        LOG.flush()
         figtreeParams = readFigtreeParameters(nexus_template)
     genomeIds = re.findall("[(,]([^(,):]+)[,:)]", newick)
     if not genomeIdToName:
