@@ -159,7 +159,7 @@ def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "
             if os.path.isfile(os.path.join(dirname, "figtree.nex")):
                 nexus_template_file = os.path.join(dirname, "figtree.nex")
     # read a model figtree nexus file
-    if os.path.exists(nexus_template):
+    if nexus_template and os.path.exists(nexus_template):
         LOG.write("Found figtree template file: %s\n"%nexus_template)
         LOG.flush()
         figtreeParams = readFigtreeParameters(nexus_template)
@@ -184,17 +184,21 @@ def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "
         filesWritten.append(outfileBase+"_tipsAligned.nex")
     return filesWritten
 
-def generateFigtreeImage(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat="PDF"):
+def generateFigtreeImage(nexusFileName, numTaxa=0, figtreeJar=None, imageFormat="PDF"):
     if Debug:
-        LOG.write("generateTreeFigure(%s, %s, %d, %s, %s)\n"%(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat))
+        LOG.write("generateTreeFigure(%s, %d, figtreeJarFile=%s, imageFormat=%s)\n"%(nexusFile, numTaxa, figtreeJar, imageFormat))
     if imageFormat not in ('PDF', 'SVG', 'PNG', 'JPEG'):
         raise Exception("imageFormat %s not in ('PDF', 'SVG', 'PNG', 'JPEG')"%imageFormat)
-    figtreeCommand = ['java',  '-jar', figtreeJarFile, '-graphic', imageFormat]
+    imageFileName = nexusFileName
+    imageFileName = nexusFileName.replace(".nex", ".")
+    imageFileName += imageFormat.lower()
+    figtreeCommand = ['java',  '-jar', figtreeJar, '-graphic', imageFormat]
     if numTaxa > 40:
         height = 600 + 15 * (numTaxa - 40) # this is an empirical correction factor to avoid taxon name overlap
         figtreeCommand.extend(['-height', str(int(height))])
-    figtreeCommand.extend([nexusFile, outfileName])
+    figtreeCommand.extend([nexusFileName, imageFileName])
     subprocess.call(figtreeCommand, stdout=LOG)
+    return imageFileName
 
 def checkMuscle():
     subprocess.check_call(['which', 'muscle'])

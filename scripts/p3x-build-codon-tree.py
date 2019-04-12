@@ -249,18 +249,13 @@ for pgfam in singleCopyPgfams:
     for genome in pgfamMatrix[pgfam]:
         singleCopyGenesPerGenome[genome] += 1
 
+filesToMoveToDetailsFolder =  []
+filesToDelete = []
+
 preflightTests.append(("single copy pgfams > 0", len(singleCopyPgfams) > 0))
 ## perform preflight test
-with open(os.path.join(args.outputDirectory, args.outputBase+".preflight"), 'w') as F:
-    passed = True
-    for test in preflightTests:
-        passed &= test[1]
-        F.write(test[0] + "\t" + str(test[1]) + "\n")
-    F.write("All tests passed\t"+str(passed)+"\n")
-    if not passed:
-        F.write("exiting\n")
-        F.close()
-        sys.exit(1)
+preflightFile = os.path.join(args.outputDirectory, args.outputBase+".preflight")
+filesToDelete.append(args.outputBase+".preflight")
 
 maxGenesWithExcess = int(args.maxGenes * (1+args.excessGenesProp) + args.excessGenesFixed)
 if len(singleCopyPgfams) > maxGenesWithExcess:
@@ -307,10 +302,23 @@ for pgfam in singleCopyPgfams:
     for genome in pgfamMatrix[pgfam]:
         filteredSingleCopyGenesPerGenome[genome] += 1
 
-with open(os.path.join(args.outputDirectory, args.outputBase+".genesPerGenome.txt"), 'w') as F:
+genesPerGenomeFile = os.path.join(args.outputDirectory, args.outputBase+".genesPerGenome.txt")
+filesToMoveToDetailsFolder.append(args.outputBase+".genesPerGenome.txt")
+with open(genesPerGenomeFile, 'w') as F:
     F.write("Genome\tAllGenes\tSingleCopy\tFiltered_SingleCopy\n")
-    for genome in genomeIds:
+    for genome in sorted(genesPerGenome, key=genesPerGenome.get):
         F.write("%s\t%d\t%d\t%d\n"%(genome, genesPerGenome[genome], singleCopyGenesPerGenome[genome], filteredSingleCopyGenesPerGenome[genome]))
+
+with open(preflightFile, 'w') as F:
+    passed = True
+    for test in preflightTests:
+        passed &= test[1]
+        F.write(test[0] + "\t" + str(test[1]) + "\n")
+    F.write("All tests passed\t"+str(passed)+"\n")
+    if not passed:
+        F.write("exiting\n")
+        F.close()
+        sys.exit(1)
 
 codonAlignments = {}
 for pgfamId in singleCopyPgfams:
@@ -358,7 +366,9 @@ os.chdir(args.outputDirectory)
 proteinPositions=0
 codonPositions = 0
 # write the genes included in each homology group (and those paralogs excluded)
-with open(phyloFileBase+".pgfamsAndGenesIncludedInAlignment.txt", 'w') as F:
+pgfamsAndGenesIncludedInAlignmentFile = phyloFileBase+".pgfamsAndGenesIncludedInAlignment.txt"
+filesToMoveToDetailsFolder.append(pgfamsAndGenesIncludedInAlignmentFile)
+with open(pgfamsAndGenesIncludedInAlignmentFile, 'w') as F:
     for pgfamId in singleCopyPgfams:
         if pgfamId in proteinAlignments:
             proteinPositions += proteinAlignments[pgfamId].get_alignment_length()
@@ -399,7 +409,9 @@ if args.writePgfamAlignments:
     for pgfam in proteinAlignments:
         SeqIO.write(proteinAlignments[pgfam], pgfam+".faa", "fasta")
 
-with open(phyloFileBase+".pgfamAlignmentStats.txt", "w") as F:
+alignmentStatsFile = phyloFileBase+".pgfamAlignmentStats.txt"
+filesToMoveToDetailsFolder.append(alignmentStatsFile)
+with open(alignmentStatsFile, "w") as F:
     first = True
     for pgfam in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
         stats = phylocode.calcAlignmentStats(proteinAlignments[pgfam])
@@ -429,29 +441,40 @@ if len(codonAlignments) == 0:
 # finally, output concatenated protein and/or DNA alignment and partitions and raxml command to appropriate files
 raxmlCommand=''
 if args.analyzeProteins and args.analyzeCodons:
-    phylocode.outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, phyloFileBase+".phy")
+    alignmentFile = phyloFileBase+".phy"
+    filesToMoveToDetailsFolder.append(alignmentFile)
+    phylocode.outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, alignmentFile)
     with open(phyloFileBase+".partitions", 'w') as PartitionFile:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
         PartitionFile.write("%s, proteins = %d-%d\n"%(args.proteinModel, codonPositions+1, codonPositions+proteinPositions))
     raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
+    filesToMoveToDetailsFolder.append(phyloFileBase+".partitions")
 
 elif args.analyzeCodons:
-    phylocode.writeConcatenatedAlignmentsPhylip(codonAlignments, phyloFileBase+".phy")
+    alignmentFile = phyloFileBase+".phy"
+    filesToMoveToDetailsFolder.append(alignmentFile)
+    phylocode.writeConcatenatedAlignmentsPhylip(codonAlignments, alignmentFile)
     with open(phyloFileBase+".partitions", 'w') as PartitionFile:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
     raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
+    filesToMoveToDetailsFolder.append(phyloFileBase+".partitions")
 
 elif args.analyzeProteins:
-    phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, phyloFileBase+".phy")
+    alignmentFile = phyloFileBase+".phy"
+    filesToMoveToDetailsFolder.append(alignmentFile)
+    phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, alignmentFile)
     raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(args.rateModel, args.proteinModel), "-p", "12345", "-T", str(args.threads)]
 raxmlCommand.extend(["-e", "1.0"]) # limit on precision, faster than default 0.1
 
 if args.bootstrapReps > 0:
     raxmlCommand.extend(["-f", "a", "-x", "12345", "-N", str(args.bootstrapReps)]) 
-with open(phyloFileBase+".raxmlCommand.sh", 'w') as F:
+
+raxmlCommandFile = phyloFileBase+".raxmlCommand.sh"
+with open(raxmlCommandFile, 'w') as F:
     F.write(" ".join(raxmlCommand)+"\n")
+filesToMoveToDetailsFolder.append(phyloFileBase+".raxmlCommand.sh")
 
 if not args.deferRaxml:
     #remove RAxML files that clash in name, their existence blocks raxml from running
@@ -473,51 +496,63 @@ if not args.deferRaxml:
     F = open(raxmlNewickFileName)
     originalNewick = F.read()
     F.close()
-    F = open(phyloFileBase + "_treeWithGenomeIds.nwk", 'w')
+    treeWithGenomeIdsFile = phyloFileBase + "_treeWithGenomeIds.nwk"
+    #filesToMoveToDetailsFolder.append(treeWithGenomeIdsFile)
+    F = open(treeWithGenomeIdsFile, 'w')
     F.write(originalNewick)
     F.close()
+
     renamedNewick = phylocode.relabelNewickTree(originalNewick, genomeIdToName)
     renamedNewickFile = phyloFileBase+"_treeWithGenomeNames.nwk"
+    filesToMoveToDetailsFolder.append(renamedNewickFile)
     F = open(renamedNewickFile, 'w')
     F.write(renamedNewick)
     F.close()
     LOG.write("codonTree newick relabeled with genome names written to "+renamedNewickFile+"\n")
     LOG.flush()
 
-    # Search for the template file figtree.nex in the same directories
-    # as our library code, somewhere in sys.path.
-    nexus_template_file = None
-    for dirname in sys.path:
-        if os.path.isfile(os.path.join(dirname, "figtree.nex")):
-            nexus_template_file = os.path.join(dirname, "figtree.nex")
-    if os.path.exists(nexus_template_file):
-        figtreeParams = phylocode.readFigtreeParameters(nexus_template_file)
-        LOG.write("Found figtree template file: %s\n"%nexus_template_file)
-    else:
-        figtreeParams = {}
-        LOG.write("Could not find valid template nexus file.\n")
-        LOG.flush()
-    nexusFilesWritten = phylocode.generateNexusFile(originalNewick, phyloFileBase, nexus_template = nexus_template_file, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
-    LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
 
-    if not (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
-        LOG.write("Could not find valid path to figtree.jar\n")
-        args.pathToFigtreeJar = None
-    if args.pathToFigtreeJar:
-        if os.path.exists(args.pathToFigtreeJar):
-            LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
-            for nexusFile in nexusFilesWritten:
-                figtreePdfName = re.sub(".nex", ".pdf", nexusFile)
-                phylocode.generateFigtreeImage(nexusFile, figtreePdfName, len(allGenomeIds), args.pathToFigtreeJar)
-                LOG.write("created figtree figure: %s\n"%figtreePdfName)
+    if args.pathToFigtreeJar is not None:
+        LOG.write("Path to figtree jar specified as %s\n"%args.pathToFigtreeJar)
+        if not os.path.exists(args.pathToFigtreeJar):
+            LOG.write("jarfile path not valid\n")
         else:
-            message = "specified figtree.jar does not exist: %s\n"%args.pathToFigtreeJar
-            LOG.write(message)
+            # Search for the template file figtree.nex in the same directories
+            # as our library code, somewhere in sys.path.
+            nexus_template_file = None
+            for dirname in sys.path:
+                if os.path.isfile(os.path.join(dirname, "figtree.nex")):
+                    nexus_template_file = os.path.join(dirname, "figtree.nex")
+            if os.path.exists(nexus_template_file):
+                figtreeParams = phylocode.readFigtreeParameters(nexus_template_file)
+                LOG.write("Found figtree template file: %s\n"%nexus_template_file)
+            else:
+                figtreeParams = {}
+                LOG.write("Could not find valid template nexus file.\n")
+                LOG.flush()
+            nexusFilesWritten = phylocode.generateNexusFile(originalNewick, phyloFileBase, nexus_template = None, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
+            LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
+            if len(nexusFilesWritten) > 1:
+                filesToDelete.append(nexusFilesWritten[1]) # get rid of codontree_tipsAligned.nex
+            for nexusFile in nexusFilesWritten:
+                for imageFormat in ("PNG", "SVG", "PDF"):
+                    imageFile = phylocode.generateFigtreeImage(nexusFile, numTaxa=len(allGenomeIds), figtreeJar=args.pathToFigtreeJar, imageFormat=imageFormat)
+                    if "_tipsAligned" in nexusFile:
+                        filesToMoveToDetailsFolder.append(imageFile)
+                LOG.write("created figtree figure: %s\n"%imageFile)
 
 LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(time()))+"\n")
 LOG.write("Total job duration %d seconds\n"%(time()-starttime))
         
-OUT = open(phyloFileBase+"_codontree_analysis.stats", 'w')
+analysisStatsFile = phyloFileBase+".analysisStats"
+
+detailsDirectory = "detail_files"
+if not os.path.isdir(detailsDirectory):
+    if os.path.exists(detailsDirectory):
+        os.remove(detailsDirectory)
+    os.mkdir(detailsDirectory)
+filesToMoveToDetailsFolder.append(analysisStatsFile)
+OUT = open(analysisStatsFile, 'w')
 OUT.write("Statistics for CodonTree Analysis\n")
 OUT.write("Num_genomes\t%s\n"%numTaxa)
 OUT.write("Num_protein_alignments\t%s\n"%len(proteinAlignments))
@@ -529,6 +564,25 @@ OUT.write("command_line\t%s\n"%" ".join(raxmlCommand))
 OUT.write("Total job duration %d seconds\n"%(time()-starttime))
 OUT.close()
 LOG.write("output written to directory %s\n"%args.outputDirectory)
+LOG.write("details files moved to subdirectory %s\n"%detailsDirectory)
+sys.stdout.write("\n")
+numMoved=0
+for fn in filesToMoveToDetailsFolder:
+    LOG.write("\t"+fn+"\t"+os.path.join(detailsDirectory, fn)+"\n")
+    os.rename(fn, os.path.join(detailsDirectory, fn))
+    numMoved += 1
+LOG.write("files moved: %d\n"%numMoved)
+filesToDelete.extend(glob.glob("RAxML*"))
+if os.path.exists(phyloFileBase+".phy.reduced"):
+    filesToDelete.append(phyloFileBase+".phy.reduced")
+numDeleted = 0
+for fn in filesToDelete:
+    os.remove(fn)
+    numDeleted += 1
+    LOG.write("\t"+fn+"\n")
+LOG.write("files deleted: %d\n"%numDeleted)
+logfileName = os.path.basename(logfileName)
+LOG.write("finally, will move this file, %s, to %s\n"%(logfileName, detailsDirectory))
 LOG.close()
-sys.stdout.write("\n") 
-
+# finally, move the log file into the detailsDirectory
+os.rename(logfileName, os.path.join(detailsDirectory, logfileName))
