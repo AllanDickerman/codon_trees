@@ -103,10 +103,10 @@ def countSingleCopyForGenomeSubsets(pgfamMatrix, genomeIds, maxAllowedDups=0):
                 present.append(genome)
                 if x > 1:
                     numDups += (x - 1)
-        if Debug:
+        if False and Debug:
             LOG.write("countSingleCopyForGenomeSubsets, pgfam=%s, missing=%d, present=%d, nd=%d\n"%(pgfam, missing, len(present), numDups))
 
-        if numDups < maxAllowedDups and (len(present) >= minSetSize) and (len(present) < len(genomeIds)):
+        if numDups <= maxAllowedDups and (len(present) >= minSetSize) and (len(present) < len(genomeIds)):
             presentTuple = tuple(present)
             if presentTuple not in scForSubset:
                 scForSubset[presentTuple] = 0

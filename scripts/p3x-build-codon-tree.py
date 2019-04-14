@@ -551,10 +551,6 @@ if args.html:
     htmlFile = os.path.abspath(args.outputBase+"_report.html")
     HTML = open(htmlFile, 'w')
     HTML.write("<h1>Phylogenetic Tree Report</h1>\n")
-    m = re.search("/awe/work/([^/]+)/", os.getcwd())
-    if m:
-        patricJobId = m.group(1)
-        HTML.write("<p><b>PATRIC Job Id:</b><&nbsp;>"+patricJobId+"</p>\n")
     if svgTreeImage is not None and os.path.exists(svgTreeImage):
         HTML.write("<h2>Rendered Tree</h2>\n")
         HTML.write(open(svgTreeImage).read()+"\n\n")
@@ -566,21 +562,30 @@ if args.html:
     
 
     HTML.write("<h2>Tree Analysis Statistics</h2>\n<table border='1'>\n")
-    HTML.write("<tr><td><b>%s<c/b></td><td>%d</td></tr>\n"%("Num_genomes", len(genomeIds)))
-    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single_copy_requested", args.maxGenes))
-    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single_copy_genes_found", len(singleCopyPgfams)))
-    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num_protein_alignments", len(proteinAlignments)))
-    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num_aligned_amino_acids", proteinPositions))
-    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num_CDS_alignments", len(codonAlignments)))
-    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num_aligned_nucleotides", codonPositions))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num genomes", len(genomeIds)))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Max Allowed Deletions", args.maxGenomesMissing))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Max Allowed Duplications", args.maxAllowedDups))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single-copy genes requested", args.maxGenes))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single-copy genes found", len(singleCopyPgfams)))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num protein alignments", len(proteinAlignments)))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num aligned amino acids", proteinPositions))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num CDS alignments", len(codonAlignments)))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num aligned nucleotides", codonPositions))
+    m = re.search("/awe/work/([^/]+)/", os.getcwd())
+    if m:
+        patricJobId = m.group(1)
+        HTML.write("<tr><td><b>PATRIC Job Idx=</b></td><td<>"+patricJobId+"</td></tr>\n")
     # tree analysis may or may not have completed, report only if appropriate
     raxmlInfoFile = "RAxML_info."+phyloFileBase
     if os.path.exists(raxmlInfoFile):
+        filesToMoveToDetailsFolder.append(raxmlInfoFile)
         try:
             raxmlInfo = open(raxmlInfoFile).read()
             raxmlVersion = re.search("RAxML version ([\d\.]+)", raxmlInfo).group(1)
             HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML Version", raxmlVersion))
-            raxmlWarnings = re.findall("IMPORTANT WARNING: (.*?Identical)", raxmlInfo)
+            raxmlWarnings = []
+            for m in re.finditer("IMPORTANT WARNING: (Sequences.*?identical)", raxmlInfo):
+                raxmlWarnings.append(m.group(1))
             if len(raxmlWarnings):
                 HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML Warnings", "<br>\n".join(raxmlWarnings)))
             raxmlDuration = re.search("Overall execution time for full ML analysis: (.*) secs", raxmlInfo).group(1) 
