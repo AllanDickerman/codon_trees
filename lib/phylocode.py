@@ -82,6 +82,37 @@ def selectSingleCopyPgfams(pgfamMatrix, genomeIdList, requiredGenome=None, maxGe
     suitablePgfamList = sorted(pgfamScore, key=pgfamScore.get, reverse=True)
     return suitablePgfamList
 
+def countSingleCopyForGenomeSubsets(pgfamMatrix, genomeIds, maxAllowedDups=0):
+    """ Return dict of how many single copy genes would be found if 
+    certain taxa were omitted from the analysis. 
+    Takes into consideration maxAllowedDups, but not maxGenomesMissing.
+    Return dict of genome tuples to count of single copy genes IF that set is omitted.
+    Record subsets down to half the original set size.
+    """
+    scForSubset = {}
+    minSetSize = int(len(genomeIds) * 0.75)
+    for pgfam in pgfamMatrix:
+        numDups = 0
+        present = []
+        missing = 0
+        for genome in sorted(pgfamMatrix[pgfam]):
+            x = len(pgfamMatrix[pgfam][genome])
+            if x == 0:
+                missing += 1
+            else:
+                present.append(genome)
+                if x > 1:
+                    numDups += (x - 1)
+        if Debug:
+            LOG.write("countSingleCopyForGenomeSubsets, pgfam=%s, missing=%d, present=%d, nd=%d\n"%(pgfam, missing, len(present), numDups))
+
+        if numDups < maxAllowedDups and (len(present) >= minSetSize) and (len(present) < len(genomeIds)):
+            presentTuple = tuple(present)
+            if presentTuple not in scForSubset:
+                scForSubset[presentTuple] = 0
+            scForSubset[presentTuple] += 1
+    return scForSubset
+
 def getGenesForPgfams(genomeGenePgfam, genomeIdList, singleCopyPgfams):
     genesForPgfams={}
     for pgfam in singleCopyPgfams:
@@ -108,7 +139,7 @@ def writeTranslatedNexusTree(outFile, newick, labelDict, figtreeParameters=None,
     for tax in taxonIds:
         if tax not in labelDict:
             labelDict[tax] = tax
-        outFile.write("\t\"%s\""%labelDict[tax])
+        outFile.write("\t\"%s %s\""%(labelDict[tax], tax))
         if tax == highlightGenome:
             outFile.write("[&!color=#ff0000]")
         outFile.write("\n")
@@ -123,7 +154,7 @@ def writeTranslatedNexusTree(outFile, newick, labelDict, figtreeParameters=None,
             translate = tax
             if tax in labelDict:
                 translate = labelDict[tax]
-            outFile.write("\t\t%s \"%s\",\n"%(tax, translate))
+            outFile.write("\t\t%s \"%s %s\",\n"%(tax, translate, tax))
         outFile.write("\t;\n")
     outFile.write("\ttree one = [&U] %s\n"%newick)
     outFile.write("\nend;\n\n")
@@ -166,10 +197,7 @@ def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "
         figtreeParams = readFigtreeParameters(nexus_template)
     genomeIds = re.findall("[(,]([^(,):]+)[,:)]", newick)
     if not genomeIdToName:
-        genomeIdToName = {}
-    for genomeId, genomeName in patric_api.getNamesForGenomeIds(genomeIds):
-        if genomeId not in genomeIdToName:
-            genomeIdToName[genomeId] = genomeName+" "+genomeId
+        genomeIdToName = patric_api.getNamesForGenomeIds(genomeIds)
     figtreeParams["trees.rooting"]="true"
     figtreeParams["trees.rootingType"]="Midpoint"
     figtreeParams["trees.order"]="true"
@@ -385,8 +413,8 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
     for seqRecord in proteinAlignment:
         protSeqDict[seqRecord.id] = seqRecord
     dnaFasta = patric_api.getDnaFastaForPatricIds(protSeqDict.keys())
-    if Debug:
-        LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
+    #if Debug:
+    #     LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
 
     dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO.StringIO(dnaFasta), "fasta", alphabet=IUPAC.ambiguous_dna))
     for seqId in protSeqDict:
@@ -408,11 +436,11 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
 
     if Debug:
         LOG.write("dna seqs has %d seqs\n"%(len(dnaSeqRecords)))
-        LOG.write("DNA seq ids: %s\n"%(", ".join(sorted(dnaSeqDict))))
-        LOG.write("pro seq ids: %s\n"%(", ".join(sorted(protSeqDict))))
-        LOG.write("first two aligned DNA seqs:\n")
-        SeqIO.write(dnaSeqRecords[:2], LOG, "fasta")
-        LOG.flush()
+        #LOG.write("DNA seq ids: %s\n"%(", ".join(sorted(dnaSeqDict))))
+        #LOG.write("pro seq ids: %s\n"%(", ".join(sorted(protSeqDict))))
+        #LOG.write("first two aligned DNA seqs:\n")
+        #SeqIO.write(dnaSeqRecords[:2], LOG, "fasta")
+        #LOG.flush()
    
     """
     # now check length of protein vs dna sequences, extend dna if needed to make match in numbers of codons
