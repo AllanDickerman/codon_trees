@@ -547,7 +547,7 @@ OUT.close()
 filesToMoveToDetailsFolder.append(analysisStatsFile)
 
 
-if args.html:
+if True or args.html:
     htmlFile = os.path.abspath(args.outputBase+"_report.html")
     HTML = open(htmlFile, 'w')
     HTML.write("<h1>Phylogenetic Tree Report</h1>\n")
