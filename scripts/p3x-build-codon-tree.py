@@ -95,7 +95,7 @@ phylocode.LOG = LOG
 patric_api.LOG = LOG
 
 if os.environ.has_key("KB_AUTH_TOKEN"):
-    patric_api.authenbticateByEnv()
+    patric_api.authenticateByEnv()
 elif args.authenticateFile:
     patric_api.authenticateByFile(args.authenticateFile)
 
