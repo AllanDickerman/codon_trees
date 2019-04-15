@@ -229,11 +229,17 @@ def generateFigtreeImage(nexusFile, numTaxa=0, figtreeJar=None, imageFormat="PDF
     imageFileName = nexusFile
     imageFileName = nexusFile.replace(".nex", ".")
     imageFileName += imageFormat.lower()
-    figtreeCommand = ['java',  '-jar', figtreeJar, '-graphic', imageFormat]
+    if figtreeJar:
+        figtreeCommand = ['java',  '-jar', figtreeJar, '-graphic', imageFormat]
+    else:
+        # assume a figtree executable is on the path
+        figtreeCommand = ['figtree', '-graphic', imageFormat]
     if numTaxa > 40:
         height = 600 + 15 * (numTaxa - 40) # this is an empirical correction factor to avoid taxon name overlap
         figtreeCommand.extend(['-height', str(int(height))])
     figtreeCommand.extend([nexusFile, imageFileName])
+    if Debug:
+        LOG.write("running this command:\n%s\n"%" ".join(figtreeCommand))
     subprocess.call(figtreeCommand, stdout=LOG)
     return imageFileName
 
