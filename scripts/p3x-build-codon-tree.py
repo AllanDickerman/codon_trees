@@ -571,10 +571,10 @@ HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num protein alignments",
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num aligned amino acids", proteinPositions))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num CDS alignments", len(codonAlignments)))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num aligned nucleotides", codonPositions))
-m = re.search("/awe/work/([^/]+)/", os.getcwd())
+m = re.search("/awe/work/../../([^_]+)_/", os.getcwd())
 if m:
     patricJobId = m.group(1)
-    HTML.write("<tr><td><b>PATRIC Job Idx=</b></td><td<>"+patricJobId+"</td></tr>\n")
+    HTML.write("<tr><td><b>PATRIC Job Idx=</b></td><td>"+patricJobId+"</td></tr>\n")
 # tree analysis may or may not have completed, report only if appropriate
 raxmlInfoFile = "RAxML_info."+phyloFileBase
 if os.path.exists(raxmlInfoFile):
