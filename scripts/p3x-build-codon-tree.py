@@ -1,5 +1,6 @@
 import sys
 import re
+from math import sqrt
 import os.path
 import glob
 import argparse
@@ -21,25 +22,29 @@ parser.add_argument("--genomeObjectFile", metavar="file", type=str, help="genome
 parser.add_argument("--genomePgfamGeneFile", metavar="file", type=str, help="read geneIDs per PGFam per genome from this file")
 parser.add_argument("--optionalGenomeIdsFile", metavar="file", type=str, help="optional genome ids, one per line (or first column of TSV)")
 parser.add_argument("--maxGenes", metavar="#", type=int, default=50, help="number of genes in concatenated alignment")
-parser.add_argument("--bootstrapReps", metavar="#", type=int, default=0, help="number of raxml 'fast boostrap' replicates")
+parser.add_argument("--excessGenesProp", metavar="prop", type=float, default=0.5, help="multiplier of maxGenes to add to filter out low-scoring alignments")
+parser.add_argument("--excessGenesFixed", metavar="#", type=int, default=20, help="fixed excess genes to add to filter out low-scoring alignments")
+parser.add_argument("--bootstrapReps", metavar="#", type=int, default=100, help="number of raxml 'fast boostrap' replicates")
 parser.add_argument("--maxGenomesMissing", metavar="#", type=int, default=0, help="genomes allowed to lack a member of any homolog group")
 parser.add_argument("--maxAllowedDups", metavar="maxDups", type=int, default=0, help="duplicated gene occurrences allowed within homolog group")
 parser.add_argument("--endGapTrimThreshold", metavar="maxPropGaps", type=float, default=0.5, help="stringency of end-gap trimming, lower for less trimming")
 parser.add_argument("--raxmlExecutable", metavar="program_name", type=str, default="raxml", help="program to call, possibly with path")
-parser.add_argument("--rateModel", metavar="rateModel", type=str, choices = ['CAT', 'GAMMA'], default="CAT", help="variable rate category model CAT|GAMMA")
-parser.add_argument("--proteinModel", metavar="substModel", type=str, default="WAGF", help="raxml protein substitution model")
-parser.add_argument("--analyzeCodons", action='store_true', help="analyze only codons (ignore amino acids)")
+parser.add_argument("--rateModel", metavar="model", type=str, choices = ['CAT', 'GAMMA'], default="CAT", help="variable rate category model CAT|GAMMA")
+parser.add_argument("--proteinModel", metavar="model", type=str, default="WAGF", help="raxml protein substitution model")
+parser.add_argument("--analyzeCodons", action='store_true', help="analyze only codon nucleotides")
 parser.add_argument("--analyzeProteins", action='store_true', help="analyze only amino acids")
-parser.add_argument("--threads", metavar="T", type=int, default=2, help="number of threads for raxml")
-parser.add_argument("--deferRaxml", action='store_true', help="does not raxml but provides command file")
-parser.add_argument("--writePgfamAlignments", action='store_true', help="create fasta alignment file per pgfam used for tree")
-parser.add_argument("--writePgfamMatrix", action='store_true', help="create file with table of counts of each pgfam per genome")
-parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="directory for output, create if it does not exist")
-parser.add_argument("--pathToFigtreeJar", type=str, metavar="jar_file", help="specify this to generate PDF graphic: java -jar pathToFigtreeJar -graphic PDF CodonTree.nex CodonTree.pdf")
-parser.add_argument("--focusGenome", metavar="genome_id", type=str, help="genome to be highlighted in color in Figtree")
-parser.add_argument("--debugMode", action='store_true', help="turns on more progress output to log file")
-parser.add_argument("--authenticateFile", type=str, metavar="file(optional)", nargs="?", default=os.path.expanduser("~/.patric_token"), help="authenticate patric user by token file")
-parser.add_argument("--authenticateEnv", action='store_true', help="authenticate using environment variable KB_AUTH_TOKEN")
+parser.add_argument("--threads", metavar="T", type=int, default=2, help="threads for raxml")
+parser.add_argument("--deferRaxml", action='store_true', help="does not run raxml")
+parser.add_argument("--writePgfamAlignments", action='store_true', help="write fasta alignment per pgfam used for tree")
+parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of counts per pgfam per genome")
+parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="for output, create if needed")
+parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="to generate PDF: java -jar path.jar -graphic PDF CodonTree.nex CodonTree.pdf")
+parser.add_argument("--html", action='store_true', help="generate html report")
+parser.add_argument("--focusGenome", metavar="id", type=str, help="to be highlighted in color in Figtree")
+parser.add_argument("--debugMode", action='store_true', help="more output to log file")
+parser.add_argument("--authToken", metavar="STRING", type=str, help="patric authentication token")
+parser.add_argument("--ignoreAuthEnv", action='store_true', help="turn off authorization by environmental variable")
+parser.add_argument("--ignoreAuthRC", action='store_true', help="turn off authorization by file")
 #parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and pgfams from stored file matching genomeIdsFile if it exists")
 args = parser.parse_args()
 starttime = time()
@@ -94,10 +99,27 @@ LOG.flush()
 phylocode.LOG = LOG
 patric_api.LOG = LOG
 
-if os.environ.has_key("KB_AUTH_TOKEN"):
-    patric_api.authenticateByEnv()
-elif args.authenticateFile:
-    patric_api.authenticateByFile(args.authenticateFile)
+if args.authToken:
+    if args.debugMode:
+        LOG.write("authorizing by passed token: %s\n"%args.authToken)
+    patric_api.authenticateByString(args.authToken)
+if not patric_api.PatricUser and not args.ignoreAuthEnv:
+    if os.environ.has_key("KB_AUTH_TOKEN"):
+        if args.debugMode:
+            LOG.write("reading auth key from environment\n")
+        patric_api.authenticateByString(os.environ.get('KB_AUTH_TOKEN'))
+    elif args.debugMode:
+        LOG.write("environment variable for authorization not found\n")
+if not patric_api.PatricUser and not args.ignoreAuthRC:
+    tokenFile = os.path.join(os.environ.get('HOME'), ".patric_token")
+    if os.path.exists(tokenFile):
+        LOG.write("reading auth key from file %s\n"%tokenFile)
+        with open(tokenFile) as F:
+            tokenString = F.read().rstrip()
+            patric_api.authenticateByString(tokenString)
+    elif args.debugMode:
+        LOG.write("authorization file %s not found\n"%tokenFile)
+LOG.write("Patric User = %s\n"%patric_api.PatricUser)
 
 preflightTests = []
 preflightTests.append(("phylocode.which(args.raxmlExecutable) != None", phylocode.which(args.raxmlExecutable) != None))
@@ -118,6 +140,8 @@ if args.genomeObjectFile:
 LOG.flush()
 
 if args.genomeGroupName:
+    if not patric_api.PatricUser:
+        raise Exception("No patric user is defined, required for using genome group.\n")
     for groupName in args.genomeGroupName:
         LOG.write("requesting genome IDs for user group %s\n"%groupName)
         for group in args.genomeGroupName:
@@ -200,6 +224,13 @@ if args.writePgfamMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".pgfamMatrix.txt"), 'w') as F:
        patric_api.writePgfamGenomeCountMatrix(pgfamMatrix, F)
 
+genesPerGenome = {}
+for genome in genomeIds:
+    genesPerGenome[genome] = 0
+for pgfam in pgfamMatrix:
+    for genome in pgfamMatrix[pgfam]:
+        genesPerGenome[genome] += 1
+
 LOG.write("got pgfams for genomes, len=%d\n"%len(pgfamMatrix))
 LOG.flush()
 
@@ -211,29 +242,30 @@ preflightTests.append(("Num genomes - maxGenomesMissing >= 4", len(genomeIds) - 
 singleCopyPgfams = phylocode.selectSingleCopyPgfams(pgfamMatrix, genomeIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
 
 LOG.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))
-if len(singleCopyPgfams) > args.maxGenes:
-    singleCopyPgfams=singleCopyPgfams[0:args.maxGenes]
-    LOG.write("\tselecting top single-family genes: %d\n"%len(singleCopyPgfams))
-LOG.flush()
-with open(os.path.join(args.outputDirectory, args.outputBase+".singleCopyPgfams.txt"), 'w') as F:
-    for pgfam in singleCopyPgfams:
-        F.write(pgfam+"\n")
+
+singleCopyGenesPerGenome = {}
+for genome in genomeIds:
+    singleCopyGenesPerGenome[genome] = 0
+for pgfam in singleCopyPgfams:
+    for genome in pgfamMatrix[pgfam]:
+        singleCopyGenesPerGenome[genome] += 1
+
+filesToMoveToDetailsFolder =  []
+filesToDelete = []
 
 preflightTests.append(("single copy pgfams > 0", len(singleCopyPgfams) > 0))
 ## perform preflight test
-with open(os.path.join(args.outputDirectory, args.outputBase+".preflight"), 'w') as F:
-    passed = True
-    for test in preflightTests:
-        passed &= test[1]
-        F.write(test[0] + "\t" + str(test[1]) + "\n")
-    F.write("All tests passed\t"+str(passed)+"\n")
-    if not passed:
-        F.write("exiting\n")
-        F.close()
-        sys.exit(1)
+preflightFile = os.path.join(args.outputDirectory, args.outputBase+".preflight")
+filesToDelete.append(args.outputBase+".preflight")
+
+maxGenesWithExcess = int(args.maxGenes * (1+args.excessGenesProp) + args.excessGenesFixed)
+if len(singleCopyPgfams) > maxGenesWithExcess:
+    singleCopyPgfams=singleCopyPgfams[0:maxGenesWithExcess]
+    LOG.write("\tevaluating alignments of %d single-family genes, excess of %d\n"%(len(singleCopyPgfams), maxGenesWithExcess - args.maxGenes))
 
 proteinAlignments = {}
-codonAlignments = {}
+proteinAlignmentStats = {}
+alignmentScore = {}
 alignedTaxa=set()
 for pgfamId in singleCopyPgfams:
     geneIdSet = set()
@@ -252,6 +284,48 @@ for pgfamId in singleCopyPgfams:
     proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqDict.values())
     proteinAlignment = phylocode.resolveDuplicatesPerPatricGenome(proteinAlignment)
     proteinAlignment.sort()
+    proteinAlignments[pgfamId] = proteinAlignment
+    alignmentStats = phylocode.calcAlignmentStats(proteinAlignment)
+    # dividing by sqrt(alignment length) yields result intermediate between sum_squared_freq and mean_squared_freq (where squared_freq is the within-column sum of squared state (letter, amino acid) frequency
+    alignmentScore[pgfamId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
+    proteinAlignmentStats[pgfamId] = alignmentStats
+
+LOG.write("protein alignments completed. num prot als = %d\n"%(len(proteinAlignments)))
+# select top alignments by score
+singleCopyPgfams = sorted(alignmentScore, key=alignmentScore.get, reverse=True)
+
+if len(singleCopyPgfams) > args.maxGenes:
+    singleCopyPgfams=singleCopyPgfams[0:args.maxGenes]
+    LOG.write("\tselecting top %d single-family genes based on alignment score\n"%len(singleCopyPgfams))
+
+filteredSingleCopyGenesPerGenome = {}
+for genome in genomeIds:
+    filteredSingleCopyGenesPerGenome[genome] = 0
+for pgfam in singleCopyPgfams:
+    for genome in pgfamMatrix[pgfam]:
+        filteredSingleCopyGenesPerGenome[genome] += 1
+
+genesPerGenomeFile = os.path.join(args.outputDirectory, args.outputBase+".genesPerGenome.txt")
+filesToMoveToDetailsFolder.append(args.outputBase+".genesPerGenome.txt")
+with open(genesPerGenomeFile, 'w') as F:
+    F.write("Genome\tAllGenes\tSingleCopy\tFiltered_SingleCopy\n")
+    for genome in sorted(genesPerGenome, key=genesPerGenome.get):
+        F.write("%s\t%d\t%d\t%d\n"%(genome, genesPerGenome[genome], singleCopyGenesPerGenome[genome], filteredSingleCopyGenesPerGenome[genome]))
+
+with open(preflightFile, 'w') as F:
+    passed = True
+    for test in preflightTests:
+        passed &= test[1]
+        F.write(test[0] + "\t" + str(test[1]) + "\n")
+    F.write("All tests passed\t"+str(passed)+"\n")
+    if not passed:
+        F.write("exiting\n")
+        F.close()
+        sys.exit(1)
+
+codonAlignments = {}
+for pgfamId in singleCopyPgfams:
+    proteinAlignment = proteinAlignments[pgfamId]
     if args.debugMode:
         LOG.write("alignment for %s has %d seqs\n"%(pgfamId, len(proteinAlignment)))
     try:
@@ -265,28 +339,25 @@ for pgfamId in singleCopyPgfams:
             codonAlignments[pgfamId] = codonAlignment
             if args.debugMode:
                 LOG.write("dna alignment for %s has %d seqs\n"%(pgfamId, len(codonAlignment)))
-                SeqIO.write(codonAlignment[pgfamId][:2], LOG, "fasta")
+                #SeqIO.write(codonAlignment[pgfamId][:2], LOG, "fasta")
     except Exception as e:
         LOG.write("Exception aligning codons: %s\n"%str(e))
     phylocode.relabelSequencesByGenomeId(proteinAlignment)
     for seqRecord in proteinAlignment:
         alignedTaxa.add(seqRecord.id)
+    # trim protein alignment after codon alignment if trimming enabled
     if args.endGapTrimThreshold:
         proteinAlignment = phylocode.trimEndGaps(proteinAlignment, args.endGapTrimThreshold)
-    proteinAlignments[pgfamId] = proteinAlignment
+        proteinAlignments[pgfamId] = proteinAlignment 
+
 numTaxa=len(alignedTaxa)
 
-LOG.write("protein and codon alignments completed. num prot als = %d, num codon als = %d\n"%(len(proteinAlignments), len(codonAlignments)))
+LOG.write("codon alignments completed. num codon als = %d\n"%(len(codonAlignments)))
 LOG.write("First prot alignment has %d elements\n"%len(proteinAlignments.values()[0]))
-LOG.write("original_id of first prot: %s\n"%proteinAlignments.values()[0][0].annotations['original_id'])
 LOG.flush()
 
 # generate hopefully unique output file name base
 phyloFileBase = args.outputBase # + "_%dtaxa"%(numTaxa)
-#if args.analyzeCodons:
-#   phyloFileBase += "_%dcds"%len(codonAlignments)
-#if args.analyzeProteins:
-#   phyloFileBase += "_%dproteins"%len(proteinAlignments)
 
 # change to output directory to simplify file naming
 os.chdir(args.outputDirectory)
@@ -294,7 +365,9 @@ os.chdir(args.outputDirectory)
 proteinPositions=0
 codonPositions = 0
 # write the genes included in each homology group (and those paralogs excluded)
-with open(phyloFileBase+".pgfamsAndGenesIncludedInAlignment.txt", 'w') as F:
+pgfamsAndGenesIncludedInAlignmentFile = phyloFileBase+".pgfamsAndGenesIncludedInAlignment.txt"
+filesToMoveToDetailsFolder.append(pgfamsAndGenesIncludedInAlignmentFile)
+with open(pgfamsAndGenesIncludedInAlignmentFile, 'w') as F:
     for pgfamId in singleCopyPgfams:
         if pgfamId in proteinAlignments:
             proteinPositions += proteinAlignments[pgfamId].get_alignment_length()
@@ -335,12 +408,14 @@ if args.writePgfamAlignments:
     for pgfam in proteinAlignments:
         SeqIO.write(proteinAlignments[pgfam], pgfam+".faa", "fasta")
 
-with open(phyloFileBase+".PgfamAlignmentStats.txt", "w") as F:
+alignmentStatsFile = phyloFileBase+".pgfamAlignmentStats.txt"
+filesToMoveToDetailsFolder.append(alignmentStatsFile)
+with open(alignmentStatsFile, "w") as F:
     first = True
-    for pgfam in proteinAlignments:
-        stats = phylocode.calcAlignmentStats(proteinAlignments[pgfam])
+    for pgfam in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
+        stats = proteinAlignmentStats[pgfam]
         if first:
-            F.write("PGFam\t"+"\t".join(sorted(stats.keys()))+"\n")
+            F.write("PGFam\t"+"\t".join(sorted(stats.keys()))+"\tUsedInAnalysis\n")
             first = False
         F.write(pgfam)
         for key in sorted(stats):
@@ -349,35 +424,59 @@ with open(phyloFileBase+".PgfamAlignmentStats.txt", "w") as F:
                 F.write("\t%d"%stats[key])
             else:
                 F.write("\t%.6f"%stats[key])
+        F.write("\t"+str(pgfam in singleCopyPgfams))
         F.write("\n")
+
+# change proteinAlignments to only include selected ones
+selectedAlignments = {}
+for pgfam in singleCopyPgfams:
+    selectedAlignments[pgfam] = proteinAlignments[pgfam]
+proteinAlignments = selectedAlignments
+
+# it is possible all codon alignments failed, remove from intent to analyze
+if len(codonAlignments) == 0:
+    args.analyzeCodons = False
 
 # finally, output concatenated protein and/or DNA alignment and partitions and raxml command to appropriate files
 raxmlCommand=''
 if args.analyzeProteins and args.analyzeCodons:
-    phylocode.outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, phyloFileBase+".phy")
+    alignmentFile = phyloFileBase+".phy"
+    filesToMoveToDetailsFolder.append(alignmentFile)
+    phylocode.outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, alignmentFile)
     with open(phyloFileBase+".partitions", 'w') as PartitionFile:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
         PartitionFile.write("%s, proteins = %d-%d\n"%(args.proteinModel, codonPositions+1, codonPositions+proteinPositions))
     raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
+    filesToMoveToDetailsFolder.append(phyloFileBase+".partitions")
 
 elif args.analyzeCodons:
-    phylocode.writeConcatenatedAlignmentsPhylip(codonAlignments, phyloFileBase+".phy")
+    alignmentFile = phyloFileBase+".phy"
+    filesToMoveToDetailsFolder.append(alignmentFile)
+    phylocode.writeConcatenatedAlignmentsPhylip(codonAlignments, alignmentFile)
     with open(phyloFileBase+".partitions", 'w') as PartitionFile:
         for i in range(1,4):
             PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
     raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
+    filesToMoveToDetailsFolder.append(phyloFileBase+".partitions")
 
 elif args.analyzeProteins:
-    phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, phyloFileBase+".phy")
+    alignmentFile = phyloFileBase+".phy"
+    filesToMoveToDetailsFolder.append(alignmentFile)
+    phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, alignmentFile)
     raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(args.rateModel, args.proteinModel), "-p", "12345", "-T", str(args.threads)]
 raxmlCommand.extend(["-e", "1.0"]) # limit on precision, faster than default 0.1
 
 if args.bootstrapReps > 0:
     raxmlCommand.extend(["-f", "a", "-x", "12345", "-N", str(args.bootstrapReps)]) 
-with open(phyloFileBase+".raxmlCommand.sh", 'w') as F:
-    F.write(" ".join(raxmlCommand)+"\n")
 
+raxmlCommandFile = phyloFileBase+".raxmlCommand.sh"
+with open(raxmlCommandFile, 'w') as F:
+    F.write(" ".join(raxmlCommand)+"\n")
+filesToMoveToDetailsFolder.append(phyloFileBase+".raxmlCommand.sh")
+
+genomeIdToName = patric_api.getNamesForGenomeIdsByN(allGenomeIds)
+svgTreeImage = None
 if not args.deferRaxml:
     #remove RAxML files that clash in name, their existence blocks raxml from running
     for fl in glob.glob("RAxML_*"+phyloFileBase):
@@ -390,9 +489,6 @@ if not args.deferRaxml:
         sys.exit(1)
     LOG.write("raxml completed: elapsed seconds = %f\n"%(time()-starttime))
     LOG.flush()
-    genomeIdToName = {}
-    for genomeId, genomeName in patric_api.getNamesForGenomeIds(allGenomeIds):
-        genomeIdToName[genomeId] = genomeName+" "+genomeId
     if genomeObject:
         genomeIdToName[genomeObject_genomeId] = genomeObject_name+" "+genomeObject_genomeId
     originalNewick = ""
@@ -402,48 +498,46 @@ if not args.deferRaxml:
     F = open(raxmlNewickFileName)
     originalNewick = F.read()
     F.close()
+    treeWithGenomeIdsFile = phyloFileBase + "_treeWithGenomeIds.nwk"
+    #filesToMoveToDetailsFolder.append(treeWithGenomeIdsFile)
+    F = open(treeWithGenomeIdsFile, 'w')
+    F.write(originalNewick)
+    F.close()
+
     renamedNewick = phylocode.relabelNewickTree(originalNewick, genomeIdToName)
     renamedNewickFile = phyloFileBase+"_treeWithGenomeNames.nwk"
+    filesToMoveToDetailsFolder.append(renamedNewickFile)
     F = open(renamedNewickFile, 'w')
     F.write(renamedNewick)
     F.close()
     LOG.write("codonTree newick relabeled with genome names written to "+renamedNewickFile+"\n")
     LOG.flush()
 
-    # Search for the template file figtree.nex in the same directories
-    # as our library code, somewhere in sys.path.
-    nexus_template_file = None
-    for dirname in sys.path:
-        if os.path.isfile(os.path.join(dirname, "figtree.nex")):
-            nexus_template_file = os.path.join(dirname, "figtree.nex")
-    if os.path.exists(nexus_template_file):
-        figtreeParams = phylocode.readFigtreeParameters(nexus_template_file)
-        LOG.write("Found figtree template file: %s\n"%nexus_template_file)
-    else:
-        figtreeParams = {}
-        LOG.write("Could not find valid template nexus file.\n")
-        LOG.flush()
-    nexusFilesWritten = phylocode.generateNexusFile(originalNewick, phyloFileBase, nexus_template = nexus_template_file, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
-    LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
-
-    if not (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
-        LOG.write("Could not find valid path to figtree.jar\n")
-        args.pathToFigtreeJar = None
-    if args.pathToFigtreeJar:
-        if os.path.exists(args.pathToFigtreeJar):
-            LOG.write("found figtree.jar at %s\n"%args.pathToFigtreeJar)
-            for nexusFile in nexusFilesWritten:
-                figtreePdfName = re.sub(".nex", ".pdf", nexusFile)
-                phylocode.generateFigtreeImage(nexusFile, figtreePdfName, len(allGenomeIds), args.pathToFigtreeJar)
-                LOG.write("created figtree figure: %s\n"%figtreePdfName)
+    if args.pathToFigtreeJar is not None:
+        LOG.write("Path to figtree jar specified as %s\n"%args.pathToFigtreeJar)
+        if not os.path.exists(args.pathToFigtreeJar):
+            LOG.write("jarfile path not valid\n")
         else:
-            message = "specified figtree.jar does not exist: %s\n"%args.pathToFigtreeJar
-            LOG.write(message)
+            nexusFilesWritten = phylocode.generateNexusFile(originalNewick, phyloFileBase, nexus_template = None, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
+            LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
+            filesToMoveToDetailsFolder.append(nexusFilesWritten[0])
+            if len(nexusFilesWritten) > 1:
+                filesToDelete.append(nexusFilesWritten[1]) # get rid of codontree_tipsAligned.nex
+            for nexusFile in nexusFilesWritten:
+                for imageFormat in ("PNG", "SVG", "PDF"):
+                    imageFile = phylocode.generateFigtreeImage(nexusFile, numTaxa=len(allGenomeIds), figtreeJar=args.pathToFigtreeJar, imageFormat=imageFormat)
+                    if "_tipsAligned" in nexusFile:
+                        filesToMoveToDetailsFolder.append(imageFile)
+                    if imageFormat == "SVG" and not svgTreeImage:
+                        svgTreeImage = imageFile
+                    LOG.write("created figtree figure: %s\n"%imageFile)
 
 LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(time()))+"\n")
 LOG.write("Total job duration %d seconds\n"%(time()-starttime))
         
-OUT = open(phyloFileBase+"_codontree_analysis.stats", 'w')
+
+analysisStatsFile = phyloFileBase+".analysisStats"
+OUT = open(analysisStatsFile, 'w')
 OUT.write("Statistics for CodonTree Analysis\n")
 OUT.write("Num_genomes\t%s\n"%numTaxa)
 OUT.write("Num_protein_alignments\t%s\n"%len(proteinAlignments))
@@ -454,7 +548,146 @@ OUT.write("PGFams\t%s\n"%",".join(sorted(proteinAlignments)))
 OUT.write("command_line\t%s\n"%" ".join(raxmlCommand))
 OUT.write("Total job duration %d seconds\n"%(time()-starttime))
 OUT.close()
-LOG.write("output written to directory %s\n"%args.outputDirectory)
-LOG.close()
-sys.stdout.write("\n") 
+filesToMoveToDetailsFolder.append(analysisStatsFile)
 
+
+if True or args.html:
+    htmlFile = os.path.abspath(args.outputBase+"_report.html")
+    HTML = open(htmlFile, 'w')
+    HTML.write("<h1>Phylogenetic Tree Report</h1>\n")
+    if svgTreeImage is not None and os.path.exists(svgTreeImage):
+        HTML.write("<h2>Rendered Tree</h2>\n")
+        HTML.write(open(svgTreeImage).read()+"\n\n")
+    alternateSvgFile = "%s_tipsAligned.svg"%phyloFileBase
+    if os.path.exists(alternateSvgFile):
+        HTML.write("<p><a target='_parent' href='detail_files/%s'>Alternate View</a></p>"%alternateSvgFile)
+
+    HTML.write("<p><a target='_parent' href='detail_files/'>Files with more details</a></p>")
+    
+
+    HTML.write("<h2>Tree Analysis Statistics</h2>\n<table border='1'>\n")
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num genomes", len(genomeIds)))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Max Allowed Deletions", args.maxGenomesMissing))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Max Allowed Duplications", args.maxAllowedDups))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single-copy genes requested", args.maxGenes))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single-copy genes found", len(singleCopyPgfams)))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num protein alignments", len(proteinAlignments)))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num aligned amino acids", proteinPositions))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num CDS alignments", len(codonAlignments)))
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num aligned nucleotides", codonPositions))
+    m = re.search("/awe/work/([^/]+)/", os.getcwd())
+    if m:
+        patricJobId = m.group(1)
+        HTML.write("<tr><td><b>PATRIC Job Idx=</b></td><td<>"+patricJobId+"</td></tr>\n")
+    # tree analysis may or may not have completed, report only if appropriate
+    raxmlInfoFile = "RAxML_info."+phyloFileBase
+    if os.path.exists(raxmlInfoFile):
+        filesToMoveToDetailsFolder.append(raxmlInfoFile)
+        try:
+            raxmlInfo = open(raxmlInfoFile).read()
+            raxmlVersion = re.search("RAxML version ([\d\.]+)", raxmlInfo).group(1)
+            HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML Version", raxmlVersion))
+            raxmlWarnings = []
+            for m in re.finditer("IMPORTANT WARNING: (Sequences.*?identical)", raxmlInfo):
+                raxmlWarnings.append(m.group(1))
+            if len(raxmlWarnings):
+                HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML Warnings", "<br>\n".join(raxmlWarnings)))
+            raxmlDuration = re.search("Overall execution time for full ML analysis: (.*) secs", raxmlInfo).group(1) 
+            raxmlDuration = float(raxmlDuration)
+            HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("RAxML Duration", raxmlDuration))
+        except Exception as e:
+            LOG.write("Exception parsing %s: %s\n"%(raxmlInfoFile, str(e))) 
+    HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("Total Job Duration", time()-starttime))
+    HTML.write("</table>\n\n")
+    if raxmlCommand and len(raxmlCommand):
+        HTML.write("<h2>RAxML Command Line</h2>"+" ".join(raxmlCommand)+"\n")
+    else:
+        HTML.write("<h2>RAxML Not Run</h2>\n")
+
+    HTML.write("<h2>Genome Statistics</h2>\n<table border='1'>\n")
+    HTML.write("<tr><th>GenomeId</th><th>Total Genes</th><th>Single Copy</th><th>Used</th><th>Name</th></tr>\n")
+    for genome in sorted(genesPerGenome, key=genesPerGenome.get):
+        if genome not in genomeIds:
+            sys.stderr.write("% not in genomeIds\n"%genome)
+        if genome not in singleCopyGenesPerGenome:
+            sys.stderr.write("% not in singleCopyGenesPerGenome\n"%genome)
+        if genome not in genomeIdToName:
+            sys.stderr.write("% not in genomeIdToName\n"%genome)
+        HTML.write("<tr><td>%s</td><td>%d</td><td>%d</td><td>%d</td>"%(genome, genesPerGenome[genome], singleCopyGenesPerGenome[genome], filteredSingleCopyGenesPerGenome[genome]))
+        if genome not in genomeIdToName:
+            genomeIdToName[genome] = genome
+        HTML.write("<td><a target='_blank' href='https://patricbrc.org/view/Genome/%s'>%s</a></td></tr>\n"%(genome, genomeIdToName[genome]))
+    HTML.write("</table>\n\n")
+
+
+    HTML.write("<h2>Gene Family Statistics</h2>\n<table border='1'>\n")
+    HTML.write("<p>Gene families are ranked by alignment score combining mean per-position variability, alignment length, and gappiness.</p>\n")
+    pgfamProduct = patric_api.getProductsForPgfamsByN(alignmentScore.keys())
+    statsToShow = ['num_pos', 'num_seqs', 'mean_squared_freq', 'prop_gaps']
+    altHeadings = ['Align.<br>Length', 'Num<br>Seqs', 'Mean<br>Sqr Freq', 'Prop<br>Gaps']
+    HTML.write("<tr><th>PGFam</th><th>Align.<br>Score</th><th>"+"</th><th>".join(altHeadings)+"</th><th>Used In<br>Analysis</th><th>Product</th></tr>\n")
+    for pgfam in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
+        stats = proteinAlignmentStats[pgfam]
+        HTML.write("<tr><td>%s</td><td>%.2f</td>"%(pgfam, alignmentScore[pgfam]))
+        for key in statsToShow:
+            val = stats[key]
+            if isinstance(val,int):
+                HTML.write("<td>%d</td>"%stats[key])
+            else:
+                HTML.write("<td>%.3f</td>"%stats[key])
+        HTML.write("<td>%s</td>\n"%str(pgfam in singleCopyPgfams))
+        HTML.write("<td>%s</td></tr>\n"%pgfamProduct[pgfam])
+    HTML.write("</table>\n")
+
+    if args.debugMode or len(singleCopyPgfams) < args.maxGenes:
+        HTML.write("<h2>Strategies to Increase Single-Copy Gene Number</h2>\n")
+        if len(singleCopyPgfams) < args.maxGenes:
+            HTML.write("<p>Number of single-copy genes (%d) was less than requested (%d).\n"%(len(singleCopyPgfams), args.maxGenes))
+        HTML.write("<p>Criteria for calling single copy genes can be made more lenient by increasing Max Allowed Deletions and/or Max Allowed Duplications.\n")
+        #compute single copy counts for subsets of taxa, helps user identify optimal subsets for further analysis
+        genomeSubsetSingleCopy = phylocode.countSingleCopyForGenomeSubsets(pgfamMatrix, genomeIds, maxAllowedDups = args.maxAllowedDups)
+        if args.debugMode:
+            LOG.write("len(genomeSubsetSingleCopy) = %d\n"%len(genomeSubsetSingleCopy))
+        if len(genomeSubsetSingleCopy) > 0:
+            HTML.write("<p>Omitting one of the following sets of genomes will provide the approximate boost in single-copy genes:</p>\n")
+            HTML.write("<table border='1'>\n")
+            HTML.write("<tr><th>scGene Boost</th><th>Genomes to Omit</th></tr>\n")
+            maxToWrite = 5
+            for subsetTuple in sorted(genomeSubsetSingleCopy, key=genomeSubsetSingleCopy.get, reverse=True):
+                omissionSet = genomeIds - set(subsetTuple)
+                HTML.write("<tr><td>%d</td><td>%s</td></tr>\n"%(genomeSubsetSingleCopy[subsetTuple], " ".join(sorted(omissionSet))))
+                maxToWrite -= 1
+                if not maxToWrite:
+                    break
+            HTML.write("</table>\n")
+    HTML.write("</html>\n")
+    HTML.close()
+
+LOG.write("output written to directory %s\n"%args.outputDirectory)
+sys.stdout.write("\n")
+detailsDirectory = "detail_files"
+LOG.write("details files moved to subdirectory %s\n"%detailsDirectory)
+if not os.path.isdir(detailsDirectory):
+    if os.path.exists(detailsDirectory):
+        os.remove(detailsDirectory)
+    os.mkdir(detailsDirectory)
+numMoved=0
+for fn in filesToMoveToDetailsFolder:
+    LOG.write("\t"+fn+"\t"+os.path.join(detailsDirectory, fn)+"\n")
+    os.rename(fn, os.path.join(detailsDirectory, fn))
+    numMoved += 1
+LOG.write("files moved: %d\n"%numMoved)
+filesToDelete.extend(glob.glob("RAxML*"))
+if os.path.exists(phyloFileBase+".phy.reduced"):
+    filesToDelete.append(phyloFileBase+".phy.reduced")
+numDeleted = 0
+for fn in filesToDelete:
+    os.remove(fn)
+    numDeleted += 1
+    LOG.write("\t"+fn+"\n")
+LOG.write("files deleted: %d\n"%numDeleted)
+logfileName = os.path.basename(logfileName)
+LOG.write("finally, will move this file, %s, to %s\n"%(logfileName, detailsDirectory))
+LOG.close()
+# finally, move the log file into the detailsDirectory
+os.rename(logfileName, os.path.join(detailsDirectory, logfileName))

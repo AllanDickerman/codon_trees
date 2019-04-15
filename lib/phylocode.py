@@ -82,6 +82,37 @@ def selectSingleCopyPgfams(pgfamMatrix, genomeIdList, requiredGenome=None, maxGe
     suitablePgfamList = sorted(pgfamScore, key=pgfamScore.get, reverse=True)
     return suitablePgfamList
 
+def countSingleCopyForGenomeSubsets(pgfamMatrix, genomeIds, maxAllowedDups=0):
+    """ Return dict of how many single copy genes would be found if 
+    certain taxa were omitted from the analysis. 
+    Takes into consideration maxAllowedDups, but not maxGenomesMissing.
+    Return dict of genome tuples to count of single copy genes IF that set is omitted.
+    Record subsets down to half the original set size.
+    """
+    scForSubset = {}
+    minSetSize = int(len(genomeIds) * 0.75)
+    for pgfam in pgfamMatrix:
+        numDups = 0
+        present = []
+        missing = 0
+        for genome in sorted(pgfamMatrix[pgfam]):
+            x = len(pgfamMatrix[pgfam][genome])
+            if x == 0:
+                missing += 1
+            else:
+                present.append(genome)
+                if x > 1:
+                    numDups += (x - 1)
+        if False and Debug:
+            LOG.write("countSingleCopyForGenomeSubsets, pgfam=%s, missing=%d, present=%d, nd=%d\n"%(pgfam, missing, len(present), numDups))
+
+        if numDups <= maxAllowedDups and (len(present) >= minSetSize) and (len(present) < len(genomeIds)):
+            presentTuple = tuple(present)
+            if presentTuple not in scForSubset:
+                scForSubset[presentTuple] = 0
+            scForSubset[presentTuple] += 1
+    return scForSubset
+
 def getGenesForPgfams(genomeGenePgfam, genomeIdList, singleCopyPgfams):
     genesForPgfams={}
     for pgfam in singleCopyPgfams:
@@ -108,7 +139,7 @@ def writeTranslatedNexusTree(outFile, newick, labelDict, figtreeParameters=None,
     for tax in taxonIds:
         if tax not in labelDict:
             labelDict[tax] = tax
-        outFile.write("\t\"%s\""%labelDict[tax])
+        outFile.write("\t\"%s %s\""%(labelDict[tax], tax))
         if tax == highlightGenome:
             outFile.write("[&!color=#ff0000]")
         outFile.write("\n")
@@ -123,7 +154,7 @@ def writeTranslatedNexusTree(outFile, newick, labelDict, figtreeParameters=None,
             translate = tax
             if tax in labelDict:
                 translate = labelDict[tax]
-            outFile.write("\t\t%s \"%s\",\n"%(tax, translate))
+            outFile.write("\t\t%s \"%s %s\",\n"%(tax, translate, tax))
         outFile.write("\t;\n")
     outFile.write("\ttree one = [&U] %s\n"%newick)
     outFile.write("\nend;\n\n")
@@ -142,12 +173,12 @@ def readFigtreeParameters(filename):
     retval = {}
     inFigtreeBlock = False
     for line in infile:
-        if re.search("begin figtree", line):
+        if re.search("begin figtree", line, re.IGNORECASE):
             inFigtreeBlock = True
         if re.search(r"^end;", line):
             inFigtreeBlock = False
         if inFigtreeBlock:
-            m = re.search(r"set\s+(\S.*)=(\S.*);", line)
+            m = re.search(r"set\s+(\S.*)=(\S.*);", line, re.IGNORECASE)
             if m:
                 retval[m.group(1)] = m.group(2)
     return retval
@@ -155,20 +186,26 @@ def readFigtreeParameters(filename):
 def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "both", focus_genome = None, genomeIdToName=None):
     figtreeParams={}
     if not nexus_template:
+        LOG.write("Look for figtree.nex template in sys.path directories\n")
         for dirname in sys.path: # should be in .../codon_trees/lib
             if os.path.isfile(os.path.join(dirname, "figtree.nex")):
                 nexus_template_file = os.path.join(dirname, "figtree.nex")
+                LOG.write("Found figtree template file: %s\n"%nexus_template)
     # read a model figtree nexus file
-    if os.path.exists(nexus_template):
-        LOG.write("Found figtree template file: %s\n"%nexus_template)
-        LOG.flush()
+    if nexus_template and os.path.exists(nexus_template):
+        LOG.write("Read figtree template file: %s\n"%nexus_template)
         figtreeParams = readFigtreeParameters(nexus_template)
     genomeIds = re.findall("[(,]([^(,):]+)[,:)]", newick)
     if not genomeIdToName:
-        genomeIdToName = {}
-    for genomeId, genomeName in patric_api.getNamesForGenomeIds(genomeIds):
-        if genomeId not in genomeIdToName:
-            genomeIdToName[genomeId] = genomeName+" "+genomeId
+        genomeIdToName = patric_api.getNamesForGenomeIds(genomeIds)
+    figtreeParams["trees.rooting"]="true"
+    figtreeParams["trees.rootingType"]="Midpoint"
+    figtreeParams["trees.order"]="true"
+    figtreeParams["trees.orderType"]="increasing"
+    figtreeParams["tipLabels.fontName"]="sanserif"
+    figtreeParams["tipLabels.fontSize"]=14
+    figtreeParams["tipLabels.fontStyle"]=0
+    figtreeParams["tipLabels.isShown"]="true"
     filesWritten=[]
     if align_tips in ("no", "both"):
         figtreeParams['rectilinearLayout.alignTipLabels'] = 'false'
@@ -184,17 +221,21 @@ def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "
         filesWritten.append(outfileBase+"_tipsAligned.nex")
     return filesWritten
 
-def generateFigtreeImage(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat="PDF"):
+def generateFigtreeImage(nexusFile, numTaxa=0, figtreeJar=None, imageFormat="PDF"):
     if Debug:
-        LOG.write("generateTreeFigure(%s, %s, %d, %s, %s)\n"%(nexusFile, outfileName, numTaxa, figtreeJarFile, imageFormat))
+        LOG.write("generateTreeFigure(%s, %d, figtreeJarFile=%s, imageFormat=%s)\n"%(nexusFile, numTaxa, figtreeJar, imageFormat))
     if imageFormat not in ('PDF', 'SVG', 'PNG', 'JPEG'):
         raise Exception("imageFormat %s not in ('PDF', 'SVG', 'PNG', 'JPEG')"%imageFormat)
-    figtreeCommand = ['java',  '-jar', figtreeJarFile, '-graphic', imageFormat]
+    imageFileName = nexusFile
+    imageFileName = nexusFile.replace(".nex", ".")
+    imageFileName += imageFormat.lower()
+    figtreeCommand = ['java',  '-jar', figtreeJar, '-graphic', imageFormat]
     if numTaxa > 40:
         height = 600 + 15 * (numTaxa - 40) # this is an empirical correction factor to avoid taxon name overlap
         figtreeCommand.extend(['-height', str(int(height))])
-    figtreeCommand.extend([nexusFile, outfileName])
+    figtreeCommand.extend([nexusFile, imageFileName])
     subprocess.call(figtreeCommand, stdout=LOG)
+    return imageFileName
 
 def checkMuscle():
     subprocess.check_call(['which', 'muscle'])
@@ -229,7 +270,8 @@ def calcAlignmentStats(alignment):
         for residue in stateCount:
             freq = stateCount[residue]/float(stats['num_seqs'])
             sumSquaredFreq += freq*freq
-    stats['squared_freq'] = sumSquaredFreq/stats['num_pos']
+    stats['sum_squared_freq'] = sumSquaredFreq
+    stats['mean_squared_freq'] = sumSquaredFreq/stats['num_pos']
     stats['gaps'] = numGaps
     stats['prop_gaps'] = numGaps/(float(numGaps+numNonGaps))
     #stats['non_gaps'] = numNonGaps
@@ -371,8 +413,8 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
     for seqRecord in proteinAlignment:
         protSeqDict[seqRecord.id] = seqRecord
     dnaFasta = patric_api.getDnaFastaForPatricIds(protSeqDict.keys())
-    if Debug:
-        LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
+    #if Debug:
+    #     LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
 
     dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO.StringIO(dnaFasta), "fasta", alphabet=IUPAC.ambiguous_dna))
     for seqId in protSeqDict:
@@ -394,11 +436,11 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
 
     if Debug:
         LOG.write("dna seqs has %d seqs\n"%(len(dnaSeqRecords)))
-        LOG.write("DNA seq ids: %s\n"%(", ".join(sorted(dnaSeqDict))))
-        LOG.write("pro seq ids: %s\n"%(", ".join(sorted(protSeqDict))))
-        LOG.write("first two aligned DNA seqs:\n")
-        SeqIO.write(dnaSeqRecords[:2], LOG, "fasta")
-        LOG.flush()
+        #LOG.write("DNA seq ids: %s\n"%(", ".join(sorted(dnaSeqDict))))
+        #LOG.write("pro seq ids: %s\n"%(", ".join(sorted(protSeqDict))))
+        #LOG.write("first two aligned DNA seqs:\n")
+        #SeqIO.write(dnaSeqRecords[:2], LOG, "fasta")
+        #LOG.flush()
    
     """
     # now check length of protein vs dna sequences, extend dna if needed to make match in numbers of codons
