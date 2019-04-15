@@ -552,9 +552,9 @@ if svgTreeImage is not None and os.path.exists(svgTreeImage):
     HTML.write(open(svgTreeImage).read()+"\n\n")
 alternateSvgFile = "%s_tipsAligned.svg"%phyloFileBase
 if os.path.exists(alternateSvgFile):
-    HTML.write("<p><a href='detail_files/%s'>Alternate View</a></p>"%alternateSvgFile)
+    HTML.write("<p><a target='_parent' href='detail_files/%s'>Alternate View</a></p>"%alternateSvgFile)
 
-HTML.write("<p><a href='detail_files/'>Files with more details</a></p>")
+HTML.write("<p><a target='_parent' href='detail_files/'>Files with more details</a></p>")
 
 
 HTML.write("<h2>Tree Analysis Statistics</h2>\n<table border='1'>\n")
@@ -608,7 +608,7 @@ for genome in sorted(genesPerGenome, key=genesPerGenome.get):
     HTML.write("<tr><td>%s</td><td>%d</td><td>%d</td><td>%d</td>"%(genome, genesPerGenome[genome], singleCopyGenesPerGenome[genome], filteredSingleCopyGenesPerGenome[genome]))
     if genome not in genomeIdToName:
         genomeIdToName[genome] = genome
-    HTML.write("<td><a href='https://patricbrc.org/view/Genome/%s'>%s</a></td></tr>\n"%(genome, genomeIdToName[genome]))
+    HTML.write("<td><a htarget='_blank' ref='https://patricbrc.org/view/Genome/%s'>%s</a></td></tr>\n"%(genome, genomeIdToName[genome]))
 HTML.write("</table>\n\n")
 
 if len(alignmentScore):
