@@ -63,8 +63,38 @@ def getGenomeGroupIds(genomeGroupName):
         LOG.write(ret.url+"\n")
     return(ret.text.replace('"', '').split("\n"))[1:-1]
 
-def getNamesForGenomeIds(genomeIdSet):
-    return getDataForGenomes(genomeIdSet, ["genome_id", "genome_name"])
+def getNamesForGenomeIds(genomeIds):
+#    return getDataForGenomes(genomeIdSet, ["genome_id", "genome_name"])
+    retval = {}
+    for genome in genomeIds:
+        retval[genome] = ""
+    query="in(genome_id,("+",".join(genomeIds)+"))&select(genome_id,genome_name)"
+    response = Session.get(Base_url+"genome/", params=query) #, 
+    if Debug:
+        LOG.write("    response URL: %s\n"%response.url)
+        LOG.write("    len(response.text)= %d\n"%len(response.text))
+    if not response.ok:
+        LOG.write("Error code %d returned by %s in getNamesForGenomeIds\n"%(response.status_code, response.url))
+    for line in response.text.split("\n"):
+        line = line.replace('"','')
+        row = line.split("\t", 1)
+        if len(row) >= 2:
+            genome, name = row
+            retval[genome] = name
+    return retval
+
+def getNamesForGenomeIdsByN(genomeIds, n=5):
+    """ For some reason, grabbing them in bulk misses some, so grab N at a time.
+    """
+    retval = {}
+    i = 0
+    genomeIds = list(genomeIds)
+    while i < len(genomeIds):
+        subset = genomeIds[i:i+n]
+        retval.update(getNamesForGenomeIds(subset))
+        i += n
+    return retval
+
 
 def getGenomeIdByFieldValue(queryField, queryValue):
     query = "eq(%s,%s)"%(queryField, queryValue)
@@ -103,39 +133,12 @@ def getDataForGenomes(genomeIdSet, fieldNames):
          #   continue
         retval.append(fields)
     return(retval)
-"""
-# commented because this will no longer work with solr schema change, need to select my md5
-def getGenomeFeaturesByPatricIds(patricIdList, fieldNames=None):
-    query="in(patric_id,("+",".join(map(urllib.quote, patricIdList))+"))"
-    if fieldNames:
-        query += "&select(%s)"%",".join(fieldNames)
-    query += "&limit(%d)"%len(patricIdList)
-    response=Session.get(Base_url+"genome_feature/", params=query)
-    if Debug:
-        LOG.write("getGenomeFeaturesByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
-    if not response.ok:
-        LOG.write("Error code %d returned by %s in getGenomeFeaturesByPatricIds\n"%(response.status_code, Base_url))
-        LOG.write("length of query was %d\n"%len(query))
-        LOG.write("query="+req.url+"\n")
-        errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
-        raise Exception(errorMessage)
-    data = response.text.replace('"','')
-    rows = data.split("\n")
-    retval = []
-    for row in rows[:-1]: # last line is empty (because of terminal line return)
-        fields = row.split("\t")
-        if len(fields) != len(fieldNames):
-            LOG.write("getGenomeFeaturesByPatricIds: parsed fields (%d) is fewer than requested fields (%d):\n%s\n"%(len(fields), len(fieldNames), row))
-            continue
-        retval.append(fields)
-    return(retval)
-"""
 
 def getProteinFastaForPatricIds(patricIds):
     query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
     query += "&limit(%d)"%len(patricIds)
     response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/protein+fasta'})
-    if Debug:
+    if False and Debug:
         LOG.write("getProteinFastaForByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
     if not response.ok:
         LOG.write("Error code %d returned by %s in getProteinFastaForPatricIds\n"%(response.status_code, Base_url))
@@ -156,7 +159,7 @@ def getDnaFastaForPatricIds(patricIds):
     query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
     query += "&limit(%d)"%len(patricIds)
     response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/dna+fasta'})
-    if Debug:
+    if False and Debug:
         LOG.write("getDnaFastaForByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
     if not response.ok:
         LOG.write("Error code %d returned by %s in getDnaFastaForPatricIds\n"%(response.status_code, Base_url))
@@ -193,6 +196,37 @@ def getProteinsFastaForGenomeId(genomeId):
                 line = "|".join(parts[:2])+"\n"
         idsFixedFasta += line
     return idsFixedFasta
+
+def getProductsForPgfams(pgfams):
+    retval = {}
+    for pgfam in pgfams:
+        retval[pgfam] = ""
+    query="in(family_id,("+",".join(pgfams)+"))&select(family_id,family_product)"
+    response = Session.get(Base_url+"protein_family_ref/", params=query) #, 
+    if Debug:
+        LOG.write("    response URL: %s\n"%response.url)
+        LOG.write("    len(response.text)= %d\n"%len(response.text))
+    if not response.ok:
+        LOG.write("Error code %d returned by %s in getProductsForPgfams\n"%(response.status_code, response.url))
+    for line in response.text.split("\n"):
+        line = line.replace('"','')
+        row = line.split("\t", 1)
+        if len(row) >= 2:
+            pgfam, product = row
+            retval[pgfam] = product
+    return retval
+
+def getProductsForPgfamsByN(pgfams, n=5):
+    """ For some reason, grabbing them in bulk misses some, so grab N at a time.
+    """
+    retval = {}
+    i = 0
+    pgfams = list(pgfams)
+    while i < len(pgfams):
+        subset = pgfams[i:i+n]
+        retval.update(getProductsForPgfams(subset))
+        i += n
+    return retval
 
 def getPatricGenesPgfamsForGenomeSet(genomeIdSet):
     if Debug:
@@ -243,8 +277,30 @@ def getPgfamGenomeMatrix(genomeIdSet, ggpMat = None):
         ggpMat[pgfam][genome].append(gene)
     return ggpMat
 
-def writePgfamGenomeMatrix(ggpMat, fileHandle):
-    """ write out pgfamGenomeMatrix to file handle 
+def getPgfamCountMatrix(genomeIdSet, ggpMat = None):
+    """ Given list of genome ids: 
+        tabulate counts per genome per pgfam 
+        (formats data from getPatricGenesPgfamsForGenomeSet as table)
+    """
+    genomeGenePgfamList = getPatricGenesPgfamsForGenomeSet(genomeIdSet)
+    if not ggpMat: # if a real value was passed, extend it
+        ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+    for row in genomeGenePgfamList:
+        genome, gene, pgfam = row
+        if pgfam not in ggpMat:
+            ggpMat[pgfam] = {}
+        if genome not in ggpMat[pgfam]:
+            ggpMat[pgfam][genome] = 0
+        ggpMat[pgfam][genome] += 1
+    return ggpMat
+
+def writePgfamGeneMatrix(ggpMat, fileHandle):
+    """ write out pgfamGeneMatrix to file handle 
+    data is list of genes per pgfam per genome
+    rows are pgfams
+    cols are genomes
+    column headers identify genomes
+    genes are comma-separated
     """
     # first collect set of all genomes
     genomeSet = set()
@@ -261,8 +317,12 @@ def writePgfamGenomeMatrix(ggpMat, fileHandle):
             fileHandle.write("\t"+gene)
         fileHandle.write("\n")
 
-def writePgfamGenomeCountMatrix(ggpMat, fileHandle):
+def writePgfamCountMatrix(ggpMat, fileHandle):
     """ write out matrix of counts per pgfam per genome to file handle 
+    data is count of genes per pgfam per genome (integers)
+    rows are pgfams
+    cols are genomes
+    column headers identify genomes
     """
     # first collect set of all genomes
     genomeSet = set()
@@ -279,22 +339,44 @@ def writePgfamGenomeCountMatrix(ggpMat, fileHandle):
             fileHandle.write("\t%d"%count)
         fileHandle.write("\n")
 
-def readPgfamGenomeMatrix(fileHandle):
-    """ read pgfamGenomeMatrix from file handle 
+def readPgfamGeneMatrix(fileHandle):
+    """ read pgfamGeneMatrix from file handle
+    Data are list of genes (comma-delimited) per genome per pgfam
+    rows are pgfams, cols are genomes, column headers identify genomes
     """
     # genome ids are headers in first line
     header = fileHandle.readline().rstrip()
     genomes = header.split("\t")[1:] # first entry is placeholder for pgfam rownames
-    ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+    pgMat = {} # genome-gene-pgfam matrix (really just a dictionary)
     for row in fileHandle:
         fields = row.rstrip().split("\t")
         pgfam = fields[0]
-        ggpMat[pgfam] = {}
+        pgMat[pgfam] = {}
         data = fields[1:]
         for i, genome in enumerate(genomes):
             if len(data[i]):
-                ggpMat[pgfam][genome] = data.split(",")
-    return ggpMat
+                pgMat[pgfam][genome] = data[i]
+    return pgMat
+
+def readPgfamCountMatrix(fileHandle):
+    """ read pgfamCountMatrix from file handle
+    rows are pgfams
+    cols are genomes
+    data are integer counts of that pgfam in that genome
+    column headers identify genomes
+    """
+    # genome ids are headers in first line
+    header = fileHandle.readline().rstrip()
+    genomes = header.split("\t")[1:] # first entry is placeholder for pgfam rownames
+    pcMat = {} # pgfam count matrix (really just a dictionary)
+    for row in fileHandle:
+        fields = row.rstrip().split("\t")
+        pgfam = fields[0]
+        pcMat[pgfam] = {}
+        data = fields[1:]
+        for i, genome in enumerate(genomes):
+            pcMat[pgfam][genome] = int(float(data[i]))
+    return pcMat
 
 def getPatricGenesPgfamsForGenomeObject(genomeObject):
 # parse a PATRIC genome object (read from json format) for PGFams
