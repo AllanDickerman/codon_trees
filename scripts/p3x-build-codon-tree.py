@@ -98,6 +98,7 @@ LOG.write("args= "+str(args)+"\n\n")
 LOG.flush()
 phylocode.LOG = LOG
 patric_api.LOG = LOG
+patric_api.PatricUser = None
 
 if args.authToken:
     if args.debugMode:
@@ -220,7 +221,7 @@ if len(genomesWithoutData):
 
 if args.writePgfamMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".pgfamMatrix.txt"), 'w') as F:
-       patric_api.writePgfamGenomeCountMatrix(pgfamMatrix, F)
+       patric_api.writePgfamCountMatrix(pgfamMatrix, F)
 
 genesPerGenome = {}
 for genome in genomeIds:
