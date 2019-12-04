@@ -4,6 +4,15 @@ import re
 import requests
 import urllib
 import json
+from Bio import BiopythonWarning
+from Bio.Alphabet import IUPAC
+from Bio import AlignIO
+from Bio import SeqIO
+from Bio import Alphabet
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from Bio.Align import MultipleSeqAlignment
+
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -415,8 +424,9 @@ def getGenomeObjectGeneDna(genomeObject):
     retval = {} # dict of SeqRecords
     for feature in genomeObject['features']:
         geneId = feature['id']
-        if geneId not in patricIds:
-            continue
+	# ?? patricIds not defined here. Guessing this was a copy and paste issue. RDO.
+        #if geneId not in patricIds:
+        #    continue
         product = ''
         if 'product' in feature:
             product = feature['function']
