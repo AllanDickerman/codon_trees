@@ -158,8 +158,6 @@ if args.optionalGenomeIdsFile:
     LOG.write("got %d optionalGenomeIds\n%s\n"%(len(optionalGenomeIds), "\t".join(optionalGenomeIds)))
     LOG.flush()
 
-preflightTests.append(("Need at least 4 genomes to build a tree", len(genomeIds) + len(optionalGenomeIds) >= 4))
-
 # if either codons or proteins is specified, analyze just that, otherwise analyze both
 if (args.analyzeCodons or args.analyzeProteins):
     if args.analyzeCodons:
@@ -231,8 +229,17 @@ for pgfam in pgfamMatrix:
     for genome in pgfamMatrix[pgfam]:
         genesPerGenome[genome] += 1
 
+deletedGenomes = set()
+for genome in genomeIds:
+    if genesPerGenome[genome] == 0:
+        deletedGenomes.add(genome)
+        LOG.write("Deleting genome %s for lack of data.\n"%genome)
+genomeIds -= deletedGenomes
+
 LOG.write("got pgfams for genomes, len=%d\n"%len(pgfamMatrix))
 LOG.flush()
+
+preflightTests.append(("Need at least 4 genomes to build a tree", len(genomeIds) + len(optionalGenomeIds) >= 4))
 
 if args.maxGenomesMissing:
     LOG.write("allowing %d genomes missing per PGfam (out of %d total)\n"%(args.maxGenomesMissing, len(genomeIds)))
@@ -244,7 +251,7 @@ singleCopyPgfams = phylocode.selectSingleCopyPgfams(pgfamMatrix, genomeIds, requ
 LOG.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))
 
 singleCopyGenesPerGenome = {}
-for genome in genomeIds:
+for genome in genesPerGenome:
     singleCopyGenesPerGenome[genome] = 0
 for pgfam in singleCopyPgfams:
     for genome in pgfamMatrix[pgfam]:
@@ -299,7 +306,7 @@ if len(singleCopyPgfams) > args.maxGenes:
     LOG.write("\tselecting top %d single-family genes based on alignment score\n"%len(singleCopyPgfams))
 
 filteredSingleCopyGenesPerGenome = {}
-for genome in genomeIds:
+for genome in genesPerGenome:
     filteredSingleCopyGenesPerGenome[genome] = 0
 for pgfam in singleCopyPgfams:
     for genome in pgfamMatrix[pgfam]:
@@ -563,6 +570,8 @@ HTML.write("<p><a target='_parent' href='detail_files/'>Files with more details<
 
 HTML.write("<h2>Tree Analysis Statistics</h2>\n<table border='1'>\n")
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num genomes", len(genomeIds)))
+if len(deletedGenomes):
+    HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Genomes lacking data", len(deletedGenomes)))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Max Allowed Deletions", args.maxGenomesMissing))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Max Allowed Duplications", args.maxAllowedDups))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single-copy genes requested", args.maxGenes))
@@ -604,15 +613,19 @@ HTML.write("<h2>Genome Statistics</h2>\n<table border='1'>\n")
 HTML.write("<tr><th>GenomeId</th><th>Total Genes</th><th>Single Copy</th><th>Used</th><th>Name</th></tr>\n")
 for genome in sorted(genesPerGenome, key=genesPerGenome.get):
     if genome not in genomeIds:
-        sys.stderr.write("% not in genomeIds\n"%genome)
-    if genome not in singleCopyGenesPerGenome:
-        sys.stderr.write("% not in singleCopyGenesPerGenome\n"%genome)
-    if genome not in genomeIdToName:
-        sys.stderr.write("% not in genomeIdToName\n"%genome)
-    HTML.write("<tr><td>%s</td><td>%d</td><td>%d</td><td>%d</td>"%(genome, genesPerGenome[genome], singleCopyGenesPerGenome[genome], filteredSingleCopyGenesPerGenome[genome]))
-    if genome not in genomeIdToName:
-        genomeIdToName[genome] = genome
-    HTML.write("<td><a htarget='_blank' ref='https://patricbrc.org/view/Genome/%s'>%s</a></td></tr>\n"%(genome, genomeIdToName[genome]))
+        LOG.write("%s not in genomeIds\n"%genome)
+    elif genome not in singleCopyGenesPerGenome:
+        LOG.write("%s not in singleCopyGenesPerGenome\n"%genome)
+    elif genome not in genomeIdToName:
+        LOG.write("%s not in genomeIdToName\n"%genome)
+    else:
+        HTML.write("<tr><td>%s</td><td>%d</td><td>%d</td><td>%d</td>"%(genome, genesPerGenome[genome], singleCopyGenesPerGenome[genome], filteredSingleCopyGenesPerGenome[genome]))
+        if genome not in genomeIdToName:
+            genomeIdToName[genome] = genome
+        HTML.write("<td><a htarget='_blank' ref='https://patricbrc.org/view/Genome/%s'>%s</a></td></tr>\n"%(genome, genomeIdToName[genome]))
+for genome in sorted(deletedGenomes):
+    HTML.write("<tr><td>%s</td><td>0</td><td>0</td><td>0</td><td>Deleted</td></tr>\n"%(genome)) 
+
 HTML.write("</table>\n\n")
 
 if len(alignmentScore):

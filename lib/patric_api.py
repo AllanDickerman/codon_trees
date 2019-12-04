@@ -65,7 +65,6 @@ def getGenomeGroupIds(genomeGroupName):
 
 def getNamesForGenomeIds(genomeIds):
 #    return getDataForGenomes(genomeIdSet, ["genome_id", "genome_name"])
-#def getProductsForPgfams(pgfams):
     retval = {}
     for genome in genomeIds:
         retval[genome] = ""
@@ -278,8 +277,30 @@ def getPgfamGenomeMatrix(genomeIdSet, ggpMat = None):
         ggpMat[pgfam][genome].append(gene)
     return ggpMat
 
-def writePgfamGenomeMatrix(ggpMat, fileHandle):
-    """ write out pgfamGenomeMatrix to file handle 
+def getPgfamCountMatrix(genomeIdSet, ggpMat = None):
+    """ Given list of genome ids: 
+        tabulate counts per genome per pgfam 
+        (formats data from getPatricGenesPgfamsForGenomeSet as table)
+    """
+    genomeGenePgfamList = getPatricGenesPgfamsForGenomeSet(genomeIdSet)
+    if not ggpMat: # if a real value was passed, extend it
+        ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+    for row in genomeGenePgfamList:
+        genome, gene, pgfam = row
+        if pgfam not in ggpMat:
+            ggpMat[pgfam] = {}
+        if genome not in ggpMat[pgfam]:
+            ggpMat[pgfam][genome] = 0
+        ggpMat[pgfam][genome] += 1
+    return ggpMat
+
+def writePgfamGeneMatrix(ggpMat, fileHandle):
+    """ write out pgfamGeneMatrix to file handle 
+    data is list of genes per pgfam per genome
+    rows are pgfams
+    cols are genomes
+    column headers identify genomes
+    genes are comma-separated
     """
     # first collect set of all genomes
     genomeSet = set()
@@ -296,8 +317,12 @@ def writePgfamGenomeMatrix(ggpMat, fileHandle):
             fileHandle.write("\t"+gene)
         fileHandle.write("\n")
 
-def writePgfamGenomeCountMatrix(ggpMat, fileHandle):
+def writePgfamCountMatrix(ggpMat, fileHandle):
     """ write out matrix of counts per pgfam per genome to file handle 
+    data is count of genes per pgfam per genome (integers)
+    rows are pgfams
+    cols are genomes
+    column headers identify genomes
     """
     # first collect set of all genomes
     genomeSet = set()
@@ -314,22 +339,44 @@ def writePgfamGenomeCountMatrix(ggpMat, fileHandle):
             fileHandle.write("\t%d"%count)
         fileHandle.write("\n")
 
-def readPgfamGenomeMatrix(fileHandle):
-    """ read pgfamGenomeMatrix from file handle 
+def readPgfamGeneMatrix(fileHandle):
+    """ read pgfamGeneMatrix from file handle
+    Data are list of genes (comma-delimited) per genome per pgfam
+    rows are pgfams, cols are genomes, column headers identify genomes
     """
     # genome ids are headers in first line
     header = fileHandle.readline().rstrip()
     genomes = header.split("\t")[1:] # first entry is placeholder for pgfam rownames
-    ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+    pgMat = {} # genome-gene-pgfam matrix (really just a dictionary)
     for row in fileHandle:
         fields = row.rstrip().split("\t")
         pgfam = fields[0]
-        ggpMat[pgfam] = {}
+        pgMat[pgfam] = {}
         data = fields[1:]
         for i, genome in enumerate(genomes):
             if len(data[i]):
-                ggpMat[pgfam][genome] = data.split(",")
-    return ggpMat
+                pgMat[pgfam][genome] = data[i]
+    return pgMat
+
+def readPgfamCountMatrix(fileHandle):
+    """ read pgfamCountMatrix from file handle
+    rows are pgfams
+    cols are genomes
+    data are integer counts of that pgfam in that genome
+    column headers identify genomes
+    """
+    # genome ids are headers in first line
+    header = fileHandle.readline().rstrip()
+    genomes = header.split("\t")[1:] # first entry is placeholder for pgfam rownames
+    pcMat = {} # pgfam count matrix (really just a dictionary)
+    for row in fileHandle:
+        fields = row.rstrip().split("\t")
+        pgfam = fields[0]
+        pcMat[pgfam] = {}
+        data = fields[1:]
+        for i, genome in enumerate(genomes):
+            pcMat[pgfam][genome] = int(float(data[i]))
+    return pcMat
 
 def getPatricGenesPgfamsForGenomeObject(genomeObject):
 # parse a PATRIC genome object (read from json format) for PGFams
