@@ -4,6 +4,10 @@ import re
 import requests
 import urllib
 import json
+from Bio.Alphabet import IUPAC
+from Bio import Alphabet
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -228,6 +232,54 @@ def getProductsForPgfamsByN(pgfams, n=5):
         i += n
     return retval
 
+def getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile):
+    """ Get the list of genes, with PGFam IDs, for universal roles for the specified genomes """
+    if Debug:
+        LOG.write("patric_api.getGenesForUniversalRolesForGenomeSet() called with %d genomes and roles file %s\n"%(len(genomeIdSet), universalRolesFile))
+    retval = []
+    universalRoles = set()
+    if os.path.exists(universalRolesFile):
+        with open(universalRolesFile) as F:
+            for line in F:
+                role = line.rstrip().split("\t")[2]
+                universalRoles.add(role)
+    #genomeIds = list(genomeIdSet)
+    genomeIds = genomeIdSet
+    genomeBatchSize = 10 # query using this batch size
+    roleBatchSize = 10
+    genomeIndex = 0
+    roleList = list(universalRoles)
+    #while genomeIndex < len(genomeIds):
+    if True:
+        #gids = genomeIds[genomeIndex:genomeIndex+genomeBatchSize]
+        gids = [genomeIds]
+        roleIndex = 0
+        #while roleIndex < len(universalRoles):
+        roles = roleList[roleIndex:roleIndex+roleBatchSize]
+        query = "in(genome_id,(%s))"%",".join(gids) #, "in(product,(%s))"%",".join(roles))
+        query += "&select(genome_id,patric_id,pgfam_id,product)"
+        query += "&limit(25000)"
+        response = Session.get(Base_url+"genome_feature/", params=query) #, 
+        if Debug:
+            LOG.write("query= %s\n"%response.url)
+        for line in response.text.split("\n"):
+            line = line.replace('"','')
+            if Debug:
+                LOG.write("row= "+line+"\n")
+            row = line.split("\t")
+            if len(row) != 4:
+                continue
+            if not row[2].startswith("PGF"):
+                continue
+            if not row[3] in roles: # check to be sure product matches at least one intended product
+                LOG.write("role not in uniRoles: %s\n"%row[3])
+                continue
+            retval.append(row)
+            roleIndex += roleBatchSize
+        genomeIndex += genomeBatchSize
+
+    return retval
+
 def getPatricGenesPgfamsForGenomeSet(genomeIdSet):
     if Debug:
         LOG.write("getPatricGenesPgfamsForGenomeSet() called for %d genomes\n"%len(genomeIdSet))
@@ -273,8 +325,8 @@ def getPgfamGenomeMatrix(genomeIdSet, ggpMat = None):
         if pgfam not in ggpMat:
             ggpMat[pgfam] = {}
         if genome not in ggpMat[pgfam]:
-            ggpMat[pgfam][genome] = []
-        ggpMat[pgfam][genome].append(gene)
+            ggpMat[pgfam][genome] = set()
+        ggpMat[pgfam][genome].add(gene)
     return ggpMat
 
 def getPgfamCountMatrix(genomeIdSet, ggpMat = None):
@@ -283,15 +335,39 @@ def getPgfamCountMatrix(genomeIdSet, ggpMat = None):
         (formats data from getPatricGenesPgfamsForGenomeSet as table)
     """
     genomeGenePgfamList = getPatricGenesPgfamsForGenomeSet(genomeIdSet)
-    if not ggpMat: # if a real value was passed, extend it
+    prevMat = None
+    if ggpMat: # if an existaing matrix was passed, extend it
+        prevMat = copy.deepcopy(ggpMat)
+    else:
         ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
     for row in genomeGenePgfamList:
         genome, gene, pgfam = row
+        if prevMat and pgfam in prevMat and genome in prevMat[pgfam]:
+            continue # don't double-count
         if pgfam not in ggpMat:
             ggpMat[pgfam] = {}
         if genome not in ggpMat[pgfam]:
             ggpMat[pgfam][genome] = 0
         ggpMat[pgfam][genome] += 1
+    return ggpMat
+
+def getPgfamMatrixFromUniversalRoles(genomeIdSet, universalRolesFile, ggpMat=None):
+    """ Search for pgfams limited from universal roles """
+    genomeGenePgfamList = getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile)
+    prevMat = None
+    if ggpMat: # if an existaing matrix was passed, extend it
+        prevMat = copy.deepcopy(ggpMat)
+    else:
+        ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+    for row in genomeGenePgfamList:
+        genome, gene, pgfam, role = row
+        if prevMat and pgfam in prevMat and genome in prevMat[pgfam]:
+            continue # don't double-count
+        if pgfam not in ggpMat:
+            ggpMat[pgfam] = {}
+        if genome not in ggpMat[pgfam]:
+            ggpMat[pgfam][genome] = set()
+        ggpMat[pgfam][genome].add(gene)
     return ggpMat
 
 def writePgfamGeneMatrix(ggpMat, fileHandle):
@@ -384,7 +460,6 @@ def getPatricGenesPgfamsForGenomeObject(genomeObject):
     genomeId = genomeObject['id']
     for feature in genomeObject['features']:
         if 'family_assignments' in feature:
-            for familyAssignment in feature['family_assignments']:
                 if familyAssignment[0] == 'PGFAM':
                     retval.append((genomeId, feature['id'], familyAssignment[1]))
     return retval
