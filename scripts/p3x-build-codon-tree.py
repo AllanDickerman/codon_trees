@@ -39,7 +39,7 @@ parser.add_argument("--writePgfamAlignments", action='store_true', help="write f
 parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of counts per pgfam per genome")
 parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="for output, create if needed")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="to generate PDF: java -jar path.jar -graphic PDF CodonTree.nex CodonTree.pdf")
-#parser.add_argument("--html", action='store_true', help="generate html report")
+parser.add_argument("--universalRolesFile", type=str, metavar="path", help="path to file with universal roles to select conserved genes")
 parser.add_argument("--focusGenome", metavar="id", type=str, help="to be highlighted in color in Figtree")
 parser.add_argument("--debugMode", action='store_true', help="more output to log file")
 parser.add_argument("--authToken", metavar="STRING", type=str, help="patric authentication token")
@@ -217,7 +217,12 @@ for pgfam in pgfamMatrix:
     genomesWithData.update(set(pgfamMatrix[pgfam].keys()))
 genomesWithoutData = allGenomeIds - genomesWithData
 if len(genomesWithoutData):
-    pgfamMatrix = patric_api.getPgfamGenomeMatrix(genomesWithoutData, pgfamMatrix)
+    if args.universalRolesFile:
+        LOG.write("getPgfamGenomeMatrixFromUniversalRoles(%s)"%args.universalRolesFile)
+        pgfamMatrix = patric_api.getPgfamMatrixFromUniversalRoles(genomesWithoutData, args.universalRolesFile, pgfamMatrix)
+    else:
+        LOG.write("getPgfamGenomeMatrix()\n")
+        pgfamMatrix = patric_api.getPgfamGenomeMatrix(genomesWithoutData, pgfamMatrix)
 
 if args.writePgfamMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".pgfamMatrix.txt"), 'w') as F:
