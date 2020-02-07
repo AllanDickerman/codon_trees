@@ -228,6 +228,30 @@ def getProductsForPgfamsByN(pgfams, n=5):
         i += n
     return retval
 
+def getPatricGenePosForGenome(genomeId):
+    if Debug:
+        LOG.write("getPatricGenesPosForGenome() called for %s\n"%genomeId)
+    retval = []
+    query="and(%s,%s,%s)"%("eq(genome_id,(%s))"%genomeId, "eq(feature_type,CDS)", "eq(pgfam_id,PGF*)")
+    query += "&select(genome_id,patric_id,pgfam_id,accession,start,end,strand)"
+    query += "&limit(25000)"
+    response = Session.get(Base_url+"genome_feature/", params=query) 
+    """
+    req = requests.Request('POST', Base_url+"genome_feature/", data=query)
+    prepared = Session.prepare_request(req) #req.prepare()
+    response=Session.send(prepared, verify=False)
+    """
+    if Debug:
+        LOG.write("    response URL: %s\n"%response.url)
+        LOG.write("    len(response.text)= %d\n"%len(response.text))
+    for line in response.text.split("\n"):
+        line = line.replace('"','')
+        row = line.split("\t")
+        if len(row) != 7:
+            continue
+        retval.append(row)
+    return retval
+
 def getPatricGenesPgfamsForGenomeSet(genomeIdSet):
     if Debug:
         LOG.write("getPatricGenesPgfamsForGenomeSet() called for %d genomes\n"%len(genomeIdSet))
@@ -335,7 +359,7 @@ def writePgfamCountMatrix(ggpMat, fileHandle):
         for genome in genomes:
             count = 0
             if genome in ggpMat[pgfam]:
-                count = len(ggpMat[pgfam][genome])
+                count = ggpMat[pgfam][genome]
             fileHandle.write("\t%d"%count)
         fileHandle.write("\n")
 
