@@ -418,7 +418,7 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
     protSeqDict = {}
     for seqRecord in proteinAlignment:
         protSeqDict[seqRecord.id] = seqRecord
-    dnaFasta = patric_api.getDnaFastaForPatricIds(protSeqDict.keys())
+    dnaFasta = patric_api.getSequenceOfFeatures(protSeqDict.keys(), 'dna')
     #if Debug:
     #     LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
 

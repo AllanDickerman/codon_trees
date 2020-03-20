@@ -284,7 +284,7 @@ for pgfamId in singleCopyPgfams:
     geneIdSet = set()
     for genome in pgfamMatrix[pgfamId]:
         geneIdSet.update(set(pgfamMatrix[pgfamId][genome]))
-    proteinFasta = patric_api.getProteinFastaForPatricIds(geneIdSet)
+    proteinFasta = patric_api.getSequenceOfFeatures(geneIdSet, 'protein')
     proteinSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO.StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein))
     for genomeId in pgfamMatrix[pgfamId]:
         for geneId in pgfamMatrix[pgfamId][genomeId]:
@@ -523,7 +523,7 @@ if len(proteinAlignments) and not args.deferRaxml:
     LOG.write("codonTree newick relabeled with genome names written to "+renamedNewickFile+"\n")
     LOG.flush()
 
-    if True or args.pathToFigtreeJar is not None:
+    if args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar):
         nexusFilesWritten = phylocode.generateNexusFile(originalNewick, phyloFileBase, nexus_template = None, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
         LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
         filesToMoveToDetailsFolder.append(nexusFilesWritten[0])

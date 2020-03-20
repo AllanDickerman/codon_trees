@@ -138,26 +138,53 @@ def getDataForGenomes(genomeIdSet, fieldNames):
         retval.append(fields)
     return(retval)
 
-def getProteinFastaForPatricIds(patricIds):
-    query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
-    query += "&limit(%d)"%len(patricIds)
-    response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/protein+fasta'})
-    if False and Debug:
-        LOG.write("getProteinFastaForByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
-    if not response.ok:
-        LOG.write("Error code %d returned by %s in getProteinFastaForPatricIds\n"%(response.status_code, Base_url))
-        errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
-        LOG.write(errorMessage)
-        LOG.flush()
-        raise Exception(errorMessage)
-    idsFixedFasta=""
-    for line in response.text.split("\n"):
-        if line.startswith(">"):
-            parts = line.split("|")
-            if len(parts) > 2:
-                line = "|".join(parts[:2])
-        idsFixedFasta += line+"\n"
-    return idsFixedFasta
+def getSequenceOfFeatures(feature_ids, seq_type='dna'):
+    # can specify dna or protein, replaces getProteinFastaForPatricIds and getDNAFastaForPatricIds
+    max_per_query=100 # avoid 414 error if too many ids are passed on one query
+    start = 0
+    retval = ""
+    while start < len(feature_ids):
+        end = start + max_per_query
+        end = min(end, len(feature_ids))
+        query="in(patric_id,("+",".join(map(urllib.quote, feature_ids[start:end]))+"))"
+        query += "&limit(%d)"%len(feature_ids)
+        response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/%+fasta'%seq_type})
+        if not response.ok:
+            errorMessage= "Error code %d returned by %s in getSequenceOfFeatures\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
+            LOG.write(errorMessage)
+            LOG.flush()
+            raise Exception(errorMessage)
+        for line in response.text.split("\n"):
+            if line.startswith(">"):
+                parts = line.split("|")
+                if len(parts) > 2:
+                    line = "|".join(parts[:2])
+            retval += line+"\n"
+    return retval
+
+def getProteinFastaForPatricIds(feature_ids):
+    max_per_query=100
+    start = 0
+    retval = ""
+    while start < len(patricIds):
+        end = start + max_per_query
+        end = min(end, len(patricIds))
+        query="in(patric_id,("+",".join(map(urllib.quote, patricIds[start:end]))+"))"
+        query += "&limit(%d)"%len(patricIds)
+        response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/protein+fasta'})
+        if not response.ok:
+            LOG.write("Error code %d returned by %s in getProteinFastaForPatricIds\n"%(response.status_code, Base_url))
+            errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
+            LOG.write(errorMessage)
+            LOG.flush()
+            raise Exception(errorMessage)
+        for line in response.text.split("\n"):
+            if line.startswith(">"):
+                parts = line.split("|")
+                if len(parts) > 2:
+                    line = "|".join(parts[:2])
+            retval += line+"\n"
+    return retval
     
 def getDnaFastaForPatricIds(patricIds):
     query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
@@ -232,7 +259,6 @@ def getProductsForPgfamsByN(pgfams, n=5):
         i += n
     return retval
 
-<<<<<<< HEAD
 def getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile):
     """ Get the list of genes, with PGFam IDs, for universal roles for the specified genomes """
     if Debug:
@@ -279,7 +305,6 @@ def getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile):
             roleIndex += roleBatchSize
         genomeIndex += genomeBatchSize
 
-=======
 def getPatricGenePosForGenome(genomeId):
     if Debug:
         LOG.write("getPatricGenesPosForGenome() called for %s\n"%genomeId)
@@ -288,11 +313,6 @@ def getPatricGenePosForGenome(genomeId):
     query += "&select(genome_id,patric_id,pgfam_id,accession,start,end,strand)"
     query += "&limit(25000)"
     response = Session.get(Base_url+"genome_feature/", params=query) 
-    """
-    req = requests.Request('POST', Base_url+"genome_feature/", data=query)
-    prepared = Session.prepare_request(req) #req.prepare()
-    response=Session.send(prepared, verify=False)
-    """
     if Debug:
         LOG.write("    response URL: %s\n"%response.url)
         LOG.write("    len(response.text)= %d\n"%len(response.text))
@@ -302,7 +322,6 @@ def getPatricGenePosForGenome(genomeId):
         if len(row) != 7:
             continue
         retval.append(row)
->>>>>>> 8eb21a1d0e565fb0265c0ab5093bd070a2551c4a
     return retval
 
 def getPatricGenesPgfamsForGenomeSet(genomeIdSet):
