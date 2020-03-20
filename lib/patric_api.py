@@ -143,6 +143,7 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
     max_per_query=100 # avoid 414 error if too many ids are passed on one query
     start = 0
     retval = ""
+    feature_ids = list(feature_ids) # so we can index over them
     while start < len(feature_ids):
         end = start + max_per_query
         end = min(end, len(feature_ids))
