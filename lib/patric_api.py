@@ -149,7 +149,7 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
         end = min(end, len(feature_ids))
         query="in(patric_id,("+",".join(map(urllib.quote, feature_ids[start:end]))+"))"
         query += "&limit(%d)"%len(feature_ids)
-        response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/%+fasta'%seq_type})
+        response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/%s+fasta'%seq_type})
         if not response.ok:
             errorMessage= "Error code %d returned by %s in getSequenceOfFeatures\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
             LOG.write(errorMessage)
@@ -161,6 +161,7 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
                 if len(parts) > 2:
                     line = "|".join(parts[:2])
             retval += line+"\n"
+        start += max_per_query
     return retval
 
 def getProteinFastaForPatricIds(feature_ids):
@@ -325,15 +326,17 @@ def getPatricGenePosForGenome(genomeId):
         retval.append(row)
     return retval
 
-def getPatricGenesPgfamsForGenomeSet(genomeIdSet):
+def get_homologs_for_genomes(genomeIdSet, scope='global'):
     if Debug:
-        LOG.write("getPatricGenesPgfamsForGenomeSet() called for %d genomes\n"%len(genomeIdSet))
+        LOG.write("get_homologs_for_genomes() called for %d genomes\n"%len(genomeIdSet))
         LOG.write("    Session headers=\n"+str(Session.headers)+"\n")
     retval = []
     # one genome at a time, so using 'get' should be fine
+    target_family_type = ('plfam_id', 'pgfam_id')[scope == 'global'] #test is index into alternatives
     for genomeId in genomeIdSet:
-        query="and(%s,%s,%s)"%("eq(genome_id,(%s))"%genomeId, "eq(feature_type,CDS)", "eq(pgfam_id,PGF*)")
-        query += "&select(genome_id,patric_id,pgfam_id)"
+        query="and(%s,%s,%s)"%("eq(genome_id,(%s))"%genomeId, "eq(feature_type,CDS)", "eq("+target_family_type+",P*)") 
+        # select genes from specified genome, be a CDS, and have a pgfam or plfam id starting with 'P'
+        query += "&select(genome_id,patric_id,"+target_family_type+")"
         query += "&limit(25000)"
         response = Session.get(Base_url+"genome_feature/", params=query) #, 
         """
@@ -350,55 +353,55 @@ def getPatricGenesPgfamsForGenomeSet(genomeIdSet):
             row = line.split("\t")
             if len(row) != 3:
                 continue
-            if not row[2].startswith("PGF"):
+            if not row[2].startswith("P"):
                 continue
             retval.append(row)
         if Debug:
-            LOG.write("    got %d pgfams for that genome\n"%(len(retval)-curLen))
+            LOG.write("    got %d %ss for that genome\n"%((len(retval)-curLen), target_family_type))
     return(retval)
 
-def getPgfamGenomeMatrix(genomeIdSet, ggpMat = None):
+def get_homolog_gene_matrix(genomeIdSet, ggpMat = None, scope='global'):
     """ Given list of genome ids: 
-        tabulate genes per genome per pgfam 
-        (formats data from getPatricGenesPgfamsForGenomeSet as table)
+        tabulate genes per genome per homolog (pgfam or plfam) 
+        (formats data from get_homologs_for_genomes as table)
     """
-    genomeGenePgfamList = getPatricGenesPgfamsForGenomeSet(genomeIdSet)
+    genome_gene_homolog_list = get_homologs_for_genomes(genomeIdSet, scope=scope)
     if not ggpMat: # if a real value was passed, extend it
-        ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
-    for row in genomeGenePgfamList:
-        genome, gene, pgfam = row
-        if pgfam not in ggpMat:
-            ggpMat[pgfam] = {}
-        if genome not in ggpMat[pgfam]:
-            ggpMat[pgfam][genome] = set()
-        ggpMat[pgfam][genome].add(gene)
+        ggpMat = {} # genome-gene-homolog matrix (really just a dictionary)
+    for row in genome_gene_homolog_list:
+        genome, gene, homolog = row
+        if homolog not in ggpMat:
+            ggpMat[homolog] = {}
+        if genome not in ggpMat[homolog]:
+            ggpMat[homolog][genome] = set()
+        ggpMat[homolog][genome].add(gene)
     return ggpMat
 
-def getPgfamCountMatrix(genomeIdSet, ggpMat = None):
+def get_homolog_count_matrix(genomeIdSet, ggpMat = None, scope='global'):
     """ Given list of genome ids: 
-        tabulate counts per genome per pgfam 
-        (formats data from getPatricGenesPgfamsForGenomeSet as table)
+        tabulate counts per genome per homology class 
+        (formats data from get_homologs_for_genomes as table)
     """
-    genomeGenePgfamList = getPatricGenesPgfamsForGenomeSet(genomeIdSet)
+    genomeGenePgfamList = get_homologs_for_genomes(genomeIdSet, scope=scope)
     prevMat = None
     if ggpMat: # if an existaing matrix was passed, extend it
         prevMat = copy.deepcopy(ggpMat)
     else:
-        ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+        ggpMat = {} # genome-gene-homolog matrix (really just a dictionary)
     for row in genomeGenePgfamList:
-        genome, gene, pgfam = row
-        if prevMat and pgfam in prevMat and genome in prevMat[pgfam]:
+        genome, gene, homolog = row
+        if prevMat and homolog in prevMat and genome in prevMat[homolog]:
             continue # don't double-count
-        if pgfam not in ggpMat:
-            ggpMat[pgfam] = {}
-        if genome not in ggpMat[pgfam]:
-            ggpMat[pgfam][genome] = 0
-        ggpMat[pgfam][genome] += 1
+        if homolog not in ggpMat:
+            ggpMat[homolog] = {}
+        if genome not in ggpMat[homolog]:
+            ggpMat[homolog][genome] = 0
+        ggpMat[homolog][genome] += 1
     return ggpMat
 
-def getPgfamMatrixFromUniversalRoles(genomeIdSet, universalRolesFile, ggpMat=None):
+def getPgfamMatrixFromUniversalRoles(genomeIdSet, universalRolesFile, ggpMat=None, scope='global'):
     """ Search for pgfams limited from universal roles """
-    genomeGenePgfamList = getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile)
+    genomeGenePgfamList = getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile, scope=scope)
     prevMat = None
     if ggpMat: # if an existaing matrix was passed, extend it
         prevMat = copy.deepcopy(ggpMat)
@@ -415,97 +418,99 @@ def getPgfamMatrixFromUniversalRoles(genomeIdSet, universalRolesFile, ggpMat=Non
         ggpMat[pgfam][genome].add(gene)
     return ggpMat
 
-def writePgfamGeneMatrix(ggpMat, fileHandle):
-    """ write out pgfamGeneMatrix to file handle 
-    data is list of genes per pgfam per genome
-    rows are pgfams
+def write_homolog_gene_matrix(ggpMat, fileHandle):
+    """ write out homologGeneMatrix to file handle 
+    data is list of genes per homolog per genome
+    rows are homologs
     cols are genomes
     column headers identify genomes
     genes are comma-separated
     """
     # first collect set of all genomes
     genomeSet = set()
-    for pgfam in ggpMat:
-        genomeSet.update(set(ggpMat[pgfam].keys()))
+    for homolog in ggpMat:
+        genomeSet.update(set(ggpMat[homolog].keys()))
     genomes = sorted(genomeSet)
     fileHandle.write("PGFam\t"+"\t".join(genomes)+"\n")
-    for pgfam in ggpMat:
-        fileHandle.write(pgfam)
+    for homolog in ggpMat:
+        fileHandle.write(homolog)
         for genome in genomes:
             gene = ""
-            if genome in ggpMat[pgfam]:
-                gene = ",".join(ggpMat[pgfam][genome])
+            if genome in ggpMat[homolog]:
+                gene = ",".join(ggpMat[homolog][genome])
             fileHandle.write("\t"+gene)
         fileHandle.write("\n")
 
-def writePgfamCountMatrix(ggpMat, fileHandle):
-    """ write out matrix of counts per pgfam per genome to file handle 
-    data is count of genes per pgfam per genome (integers)
-    rows are pgfams
+def write_homolog_count_matrix(ggpMat, fileHandle):
+    """ write out matrix of counts per homolog per genome to file handle 
+    data is count of genes per homolog per genome (integers)
+    rows are homologs
     cols are genomes
     column headers identify genomes
     """
     # first collect set of all genomes
     genomeSet = set()
-    for pgfam in ggpMat:
-        genomeSet.update(set(ggpMat[pgfam].keys()))
+    for homolog in ggpMat:
+        genomeSet.update(set(ggpMat[homolog].keys()))
     genomes = sorted(genomeSet)
     fileHandle.write("PGFam\t"+"\t".join(genomes)+"\n")
-    for pgfam in ggpMat:
-        fileHandle.write(pgfam)
+    for homolog in ggpMat:
+        fileHandle.write(homolog)
         for genome in genomes:
             count = 0
-            if genome in ggpMat[pgfam]:
-                count = len(ggpMat[pgfam][genome])
+            if genome in ggpMat[homolog]:
+                count = len(ggpMat[homolog][genome])
             fileHandle.write("\t%d"%count)
         fileHandle.write("\n")
 
-def readPgfamGeneMatrix(fileHandle):
-    """ read pgfamGeneMatrix from file handle
-    Data are list of genes (comma-delimited) per genome per pgfam
-    rows are pgfams, cols are genomes, column headers identify genomes
+def read_homolog_gene_matrix(fileHandle):
+    """ read homologGeneMatrix from file handle
+    Data are list of genes (comma-delimited) per genome per homolog
+    rows are homologs, cols are genomes, column headers identify genomes
     """
     # genome ids are headers in first line
     header = fileHandle.readline().rstrip()
-    genomes = header.split("\t")[1:] # first entry is placeholder for pgfam rownames
-    pgMat = {} # genome-gene-pgfam matrix (really just a dictionary)
+    genomes = header.split("\t")[1:] # first entry is placeholder for homolog rownames
+    pgMat = {} # genome-gene-homolog matrix (really just a dictionary)
     for row in fileHandle:
         fields = row.rstrip().split("\t")
-        pgfam = fields[0]
-        pgMat[pgfam] = {}
+        homolog = fields[0]
+        pgMat[homolog] = {}
         data = fields[1:]
         for i, genome in enumerate(genomes):
             if len(data[i]):
-                pgMat[pgfam][genome] = data[i]
+                pgMat[homolog][genome] = data[i]
     return pgMat
 
-def readPgfamCountMatrix(fileHandle):
-    """ read pgfamCountMatrix from file handle
-    rows are pgfams
+def read_homolog_count_matrix(fileHandle):
+    """ read homologCountMatrix from file handle
+    rows are homologs
     cols are genomes
-    data are integer counts of that pgfam in that genome
+    data are integer counts of that homolog in that genome
     column headers identify genomes
     """
     # genome ids are headers in first line
     header = fileHandle.readline().rstrip()
-    genomes = header.split("\t")[1:] # first entry is placeholder for pgfam rownames
-    pcMat = {} # pgfam count matrix (really just a dictionary)
+    genomes = header.split("\t")[1:] # first entry is placeholder for homolog rownames
+    pcMat = {} # homolog count matrix (really just a dictionary)
     for row in fileHandle:
         fields = row.rstrip().split("\t")
-        pgfam = fields[0]
-        pcMat[pgfam] = {}
+        homolog = fields[0]
+        pcMat[homolog] = {}
         data = fields[1:]
         for i, genome in enumerate(genomes):
-            pcMat[pgfam][genome] = int(float(data[i]))
+            pcMat[homolog][genome] = int(float(data[i]))
     return pcMat
 
-def getPatricGenesPgfamsForGenomeObject(genomeObject):
+def get_homologs_from_genome_object(genomeObject, scope='global'):
 # parse a PATRIC genome object (read from json format) for PGFams
-    retval = [] # a list of tupples of (genomeId, Pgfam, geneId)
+# scope can be 'global' or 'local' for pgfams or plfams
+    retval = [] # a list of tupples of (genomeId, Pxfam, geneId)
     genomeId = genomeObject['id']
+    target_family_type = ('PLFAM', 'PGFAM')[scope == 'global'] #test is index into alternatives
     for feature in genomeObject['features']:
         if 'family_assignments' in feature:
-                if familyAssignment[0] == 'PGFAM':
+                if familyAssignment[0] == target_family_type:
                     retval.append((genomeId, feature['id'], familyAssignment[1]))
     return retval
 

@@ -58,7 +58,7 @@ def getPgfamDistribution(genomeGenePgfamList):
         ggpMat[pgfam][genome].append(gene)
     return ggpMat
 
-def selectSingleCopyPgfams(pgfamMatrix, genomeIdList, requiredGenome=None, maxGenomesMissing=0, maxAllowedDups=0):
+def selectSingleCopyHomologs(pgfamMatrix, genomeIdList, requiredGenome=None, maxGenomesMissing=0, maxAllowedDups=0):
     # given a genome-gene-pgfam matrix
     # find the set of pgfam_ids which satisfy the maxGenomesMissing & maxAllowedDups criteria for specified genomes
     pgfamScore = {}
