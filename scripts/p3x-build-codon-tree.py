@@ -9,7 +9,7 @@ import json
 try:
     from StringIO import StringIO ## for Python 2
 except ImportError:
-    from io import StringIO ## for Python 
+    from io import StringIO ## for Python 3
 from time import time, localtime, strftime                        
 import patric_api
 import phylocode
@@ -294,7 +294,7 @@ for homologId in singleCopyHomologs:
         for geneId in homologMatrix[homologId][genomeId]:
             if genomeId == genomeObject_genomeId:
                 proteinSeqDict[geneId] = genomeObjectProteins[geneId]
-        proteinSeqDict[geneId].annotations["genome_id"] = genomeId
+            proteinSeqDict[geneId].annotations["genome_id"] = genomeId
         #proteinSeqRecords.append(proteinSeqDict[proteinId])
     if args.debugMode:
         LOG.write("protein set for %s has %d seqs\n"%(homologId, len(proteinSeqDict)))
@@ -345,20 +345,22 @@ for homologId in singleCopyHomologs:
     proteinAlignment = proteinAlignments[homologId]
     if args.debugMode:
         LOG.write("alignment for %s has %d seqs\n"%(homologId, len(proteinAlignment)))
-    try:
-        codonAlignment = phylocode.proteinToCodonAlignment(proteinAlignment, genomeObjectGeneDna)
-        if codonAlignment: # if an error happened, we don't do next steps
-            phylocode.relabelSequencesByGenomeId(codonAlignment)
-            if codonAlignment.get_alignment_length() % 3:
-                raise Exception("codon alignment length not multiple of 3 for %s\n"%homologId)
-            if args.endGapTrimThreshold:
-                codonAlignment = phylocode.trimEndGaps(codonAlignment, args.endGapTrimThreshold)
-            codonAlignments[homologId] = codonAlignment
-            if args.debugMode:
-                LOG.write("dna alignment for %s has %d seqs\n"%(homologId, len(codonAlignment)))
+    #try:
+    #codonAlignment = phylocode.proteinToCodonAlignment(proteinAlignment, genomeObjectGeneDna)
+    codonAlignment = phylocode.gapCdsToProteins(proteinAlignment, genomeObjectGeneDna)
+    if codonAlignment: # if an error happened, we don't do next steps
+        phylocode.relabelSequencesByGenomeId(codonAlignment)
+        if codonAlignment.get_alignment_length() % 3:
+            raise Exception("codon alignment length not multiple of 3 for %s\n"%homologId)
+        if args.endGapTrimThreshold:
+            codonAlignment = phylocode.trimEndGaps(codonAlignment, args.endGapTrimThreshold)
+        codonAlignments[homologId] = codonAlignment
+        if args.debugMode:
+            LOG.write("dna alignment for %s has %d seqs\n"%(homologId, len(codonAlignment)))
                 #SeqIO.write(codonAlignment[homologId][:2], LOG, "fasta")
-    except Exception as e:
-        LOG.write("Exception aligning codons: %s\n"%str(e))
+    #except Exception as e:
+    #    LOG.write("Exception aligning codons: %s\n"%str(e))
+    #    raise(e)
     phylocode.relabelSequencesByGenomeId(proteinAlignment)
     for seqRecord in proteinAlignment:
         alignedTaxa.add(seqRecord.id)
