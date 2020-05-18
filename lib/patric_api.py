@@ -147,7 +147,8 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
     while start < len(feature_ids):
         end = start + max_per_query
         end = min(end, len(feature_ids))
-        query="in(patric_id,("+",".join(map(urllib.quote, feature_ids[start:end]))+"))"
+        #query="in(patric_id,("+",".join(map(urllib.quote, feature_ids[start:end]))+"))"
+        query="in(patric_id,("+",".join(feature_ids[start:end])+"))"
         query += "&limit(%d)"%len(feature_ids)
         response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/%s+fasta'%seq_type})
         if not response.ok:
