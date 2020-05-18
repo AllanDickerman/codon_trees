@@ -230,7 +230,7 @@ if len(genomesWithoutData):
 
 if args.writePgfamMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".homologMatrix.txt"), 'w') as F:
-       patric_api.write_homolog_count_matrix(homologMatrix, F)
+       patric_api.write_homolog_gene_matrix(homologMatrix, F)
 
 genesPerGenome = {}
 for genome in genomeIds:
