@@ -6,7 +6,10 @@ import glob
 import argparse
 import subprocess
 import json
-import StringIO
+try:
+    from StringIO import StringIO ## for Python 2
+except ImportError:
+    from io import StringIO ## for Python 3
 from time import time, localtime, strftime                        
 import patric_api
 import phylocode
@@ -16,11 +19,13 @@ from Bio.Alphabet import IUPAC
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--parametersJson", metavar="file.json", type=str, help="parameters in json format (command line overrides)")
 parser.add_argument("--outputBase", metavar="filebase", type=str, help="base name for output files, def=codontree")
+parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="for output, create if needed")
 parser.add_argument("--genomeIdsFile", metavar="file", type=str, nargs="*", help="file with PATRIC genome IDs, one per line (or first column of TSV)")
 parser.add_argument("--genomeGroupName", metavar="name", type=str, nargs="*", help="name of user's genome group at PATRIC")
 parser.add_argument("--genomeObjectFile", metavar="file", type=str, help="genome object (json file)")
 parser.add_argument("--genomePgfamGeneFile", metavar="file", type=str, help="read geneIDs per PGFam per genome from this file")
 parser.add_argument("--optionalGenomeIdsFile", metavar="file", type=str, help="optional genome ids, one per line (or first column of TSV)")
+parser.add_argument("--homolog_scope", metavar="global/local", choices=['global', 'local'], default='global', help="use PGFams (global) or PLFams (local}")
 parser.add_argument("--maxGenes", metavar="#", type=int, default=50, help="number of genes in concatenated alignment")
 parser.add_argument("--excessGenesProp", metavar="prop", type=float, default=0.5, help="multiplier of maxGenes to add to filter out low-scoring alignments")
 parser.add_argument("--excessGenesFixed", metavar="#", type=int, default=20, help="fixed excess genes to add to filter out low-scoring alignments")
@@ -35,17 +40,16 @@ parser.add_argument("--analyzeCodons", action='store_true', help="analyze only c
 parser.add_argument("--analyzeProteins", action='store_true', help="analyze only amino acids")
 parser.add_argument("--threads", metavar="T", type=int, default=2, help="threads for raxml")
 parser.add_argument("--deferRaxml", action='store_true', help="does not run raxml")
-parser.add_argument("--writePgfamAlignments", action='store_true', help="write fasta alignment per pgfam used for tree")
-parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of counts per pgfam per genome")
-parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="for output, create if needed")
+parser.add_argument("--writePgfamAlignments", action='store_true', help="write fasta alignment per homolog used for tree")
+parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of counts per homolog per genome")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="to generate PDF: java -jar path.jar -graphic PDF CodonTree.nex CodonTree.pdf")
-#parser.add_argument("--html", action='store_true', help="generate html report")
+parser.add_argument("--universalRolesFile", type=str, metavar="path", help="path to file with universal roles to select conserved genes")
 parser.add_argument("--focusGenome", metavar="id", type=str, help="to be highlighted in color in Figtree")
 parser.add_argument("--debugMode", action='store_true', help="more output to log file")
 parser.add_argument("--authToken", metavar="STRING", type=str, help="patric authentication token")
 parser.add_argument("--ignoreAuthEnv", action='store_true', help="turn off authorization by environmental variable")
 parser.add_argument("--ignoreAuthRC", action='store_true', help="turn off authorization by file")
-#parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and pgfams from stored file matching genomeIdsFile if it exists")
+#parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and homologs from stored file matching genomeIdsFile if it exists")
 args = parser.parse_args()
 starttime = time()
 genomeIds = set() # list of genome IDs for tree building (enforcing maxGenomesMissing and maxAllowedDupes)
@@ -98,13 +102,14 @@ LOG.write("args= "+str(args)+"\n\n")
 LOG.flush()
 phylocode.LOG = LOG
 patric_api.LOG = LOG
+patric_api.PatricUser = None
 
 if args.authToken:
     if args.debugMode:
         LOG.write("authorizing by passed token: %s\n"%args.authToken)
     patric_api.authenticateByString(args.authToken)
 if not patric_api.PatricUser and not args.ignoreAuthEnv:
-    if os.environ.has_key("KB_AUTH_TOKEN"):
+    if "KB_AUTH_TOKEN" in os.environ:
         if args.debugMode:
             LOG.write("reading auth key from environment\n")
         patric_api.authenticateByString(os.environ.get('KB_AUTH_TOKEN'))
@@ -177,12 +182,12 @@ phylocode.LOG = LOG
 
 
 # this is where we gather the list of Pgfam genes for each genome ID
-pgfamMatrix = {}
+homologMatrix = {}
 if args.genomePgfamGeneFile: # reserve for future use (convenient for debugging)
     if not os.path.exists(args.genomePgfamGeneFile):
         raise Exception("genomePgfamGeneFile specified as %s does not exist"%args.genomePgfamGeneFile)
     with open(args.genomePgfamGeneFile) as F:
-        pgfamMatrix = patric_api.readPgfamGenomeMatrix(F)
+        homologMatrix = patric_api.read_homolog_gene_matrix(F)
 
 genomeObject = None
 genomeObject_genomeId = None
@@ -193,14 +198,14 @@ if args.genomeObjectFile:
     genomeObject = json.load(open(args.genomeObjectFile))
     genomeObjectProteins = patric_api.getGenomeObjectProteins(genomeObject)
     genomeObjectGeneDna = patric_api.getGenomeObjectGeneDna(genomeObject)
-    genomeObjectGenePgfams = patric_api.getPatricGenesPgfamsForGenomeObject(genomeObject)
-    for row in genomeObjectGenePgfams:
-        genomeId, gene, pgfam = row
-        if pgfam not in pgfamMatrix:
-            pgfamMatrix[pgfam] = {}
-        if genomeId not in pgfamMatrix[pgfam]:
-            pgfamMatrix[pgfam][genomeId] = []
-        pgfamMatrix[pgfam][genomeId].append(gene)
+    genomeObjectGeneHomologs = patric_api.get_homologs_from_genome_object(genomeObject)
+    for row in genomeObjectGeneHomologs:
+        genomeId, gene, homolog = row
+        if homolog not in homologMatrix:
+            homologMatrix[homolog] = {}
+        if genomeId not in homologMatrix[homolog]:
+            homologMatrix[homolog][genomeId] = []
+        homologMatrix[homolog][genomeId].append(gene)
     
     genomeObject_genomeId = genomeObject['id']
     genomeObject_name = genomeObject['scientific_name']
@@ -212,21 +217,26 @@ if args.genomeObjectFile:
 allGenomeIds = genomeIds
 allGenomeIds.update(optionalGenomeIds)
 genomesWithData = set()
-for pgfam in pgfamMatrix:
-    genomesWithData.update(set(pgfamMatrix[pgfam].keys()))
+for homolog in homologMatrix:
+    genomesWithData.update(set(homologMatrix[homolog].keys()))
 genomesWithoutData = allGenomeIds - genomesWithData
 if len(genomesWithoutData):
-    pgfamMatrix = patric_api.getPgfamGenomeMatrix(genomesWithoutData, pgfamMatrix)
+    if args.universalRolesFile:
+        LOG.write("getPgfamGenomeMatrixFromUniversalRoles(%s)"%args.universalRolesFile)
+        homologMatrix = patric_api.getPgfamMatrixFromUniversalRoles(genomesWithoutData, args.universalRolesFile, homologMatrix)
+    else:
+        LOG.write("getPgfamGenomeMatrix()\n")
+        homologMatrix = patric_api.get_homolog_gene_matrix(genomesWithoutData, homologMatrix, scope=args.homolog_scope)
 
 if args.writePgfamMatrix:
-    with open(os.path.join(args.outputDirectory, args.outputBase+".pgfamMatrix.txt"), 'w') as F:
-       patric_api.writePgfamGenomeCountMatrix(pgfamMatrix, F)
+    with open(os.path.join(args.outputDirectory, args.outputBase+".homologMatrix.txt"), 'w') as F:
+       patric_api.write_homolog_gene_matrix(homologMatrix, F)
 
 genesPerGenome = {}
 for genome in genomeIds:
     genesPerGenome[genome] = 0
-for pgfam in pgfamMatrix:
-    for genome in pgfamMatrix[pgfam]:
+for homolog in homologMatrix:
+    for genome in homologMatrix[homolog]:
         genesPerGenome[genome] += 1
 
 deletedGenomes = set()
@@ -236,7 +246,7 @@ for genome in genomeIds:
         LOG.write("Deleting genome %s for lack of data.\n"%genome)
 genomeIds -= deletedGenomes
 
-LOG.write("got pgfams for genomes, len=%d\n"%len(pgfamMatrix))
+LOG.write("got homologs for genomes, len=%d\n"%len(homologMatrix))
 LOG.flush()
 
 preflightTests.append(("Need at least 4 genomes to build a tree", len(genomeIds) + len(optionalGenomeIds) >= 4))
@@ -245,71 +255,71 @@ if args.maxGenomesMissing:
     LOG.write("allowing %d genomes missing per PGfam (out of %d total)\n"%(args.maxGenomesMissing, len(genomeIds)))
 preflightTests.append(("Num genomes - maxGenomesMissing >= 4", len(genomeIds) - args.maxGenomesMissing >= 4))
 
-# call to getSingleCopyPgfams uses main genome, optional genomes are not involved in selecting single copy pgfams
-singleCopyPgfams = phylocode.selectSingleCopyPgfams(pgfamMatrix, genomeIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
+# call to getSingleCopyHomologs uses main genome, optional genomes are not involved in selecting single copy homologs
+singleCopyHomologs = phylocode.selectSingleCopyHomologs(homologMatrix, genomeIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
 
-LOG.write("got single copy pgfams, num=%d\n"%len(singleCopyPgfams))
+LOG.write("got single copy homologs, num=%d\n"%len(singleCopyHomologs))
 
 singleCopyGenesPerGenome = {}
 for genome in genesPerGenome:
     singleCopyGenesPerGenome[genome] = 0
-for pgfam in singleCopyPgfams:
-    for genome in pgfamMatrix[pgfam]:
+for homolog in singleCopyHomologs:
+    for genome in homologMatrix[homolog]:
         singleCopyGenesPerGenome[genome] += 1
 
 filesToMoveToDetailsFolder =  []
 filesToDelete = []
 
-preflightTests.append(("single copy pgfams > 0", len(singleCopyPgfams) > 0))
+preflightTests.append(("single copy homologs > 0", len(singleCopyHomologs) > 0))
 ## perform preflight test
 preflightFile = os.path.join(args.outputDirectory, args.outputBase+".preflight")
 filesToDelete.append(args.outputBase+".preflight")
 
 maxGenesWithExcess = int(args.maxGenes * (1+args.excessGenesProp) + args.excessGenesFixed)
-if len(singleCopyPgfams) > maxGenesWithExcess:
-    singleCopyPgfams=singleCopyPgfams[0:maxGenesWithExcess]
-    LOG.write("\tevaluating alignments of %d single-family genes, excess of %d\n"%(len(singleCopyPgfams), maxGenesWithExcess - args.maxGenes))
+if len(singleCopyHomologs) > maxGenesWithExcess:
+    singleCopyHomologs=singleCopyHomologs[0:maxGenesWithExcess]
+    LOG.write("\tevaluating alignments of %d single-family genes, excess of %d\n"%(len(singleCopyHomologs), maxGenesWithExcess - args.maxGenes))
 
 proteinAlignments = {}
 proteinAlignmentStats = {}
 alignmentScore = {}
 alignedTaxa=set()
-for pgfamId in singleCopyPgfams:
+for homologId in singleCopyHomologs:
     geneIdSet = set()
-    for genome in pgfamMatrix[pgfamId]:
-        geneIdSet.update(set(pgfamMatrix[pgfamId][genome]))
-    proteinFasta = patric_api.getProteinFastaForPatricIds(geneIdSet)
-    proteinSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO.StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein))
-    for genomeId in pgfamMatrix[pgfamId]:
-        for geneId in pgfamMatrix[pgfamId][genomeId]:
+    for genome in homologMatrix[homologId]:
+        geneIdSet.update(set(homologMatrix[homologId][genome]))
+    proteinFasta = patric_api.getSequenceOfFeatures(geneIdSet, 'protein')
+    proteinSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein))
+    for genomeId in homologMatrix[homologId]:
+        for geneId in homologMatrix[homologId][genomeId]:
             if genomeId == genomeObject_genomeId:
                 proteinSeqDict[geneId] = genomeObjectProteins[geneId]
-        proteinSeqDict[geneId].annotations["genome_id"] = genomeId
+            proteinSeqDict[geneId].annotations["genome_id"] = genomeId
         #proteinSeqRecords.append(proteinSeqDict[proteinId])
     if args.debugMode:
-        LOG.write("protein set for %s has %d seqs\n"%(pgfamId, len(proteinSeqDict)))
+        LOG.write("protein set for %s has %d seqs\n"%(homologId, len(proteinSeqDict)))
     proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqDict.values())
     proteinAlignment = phylocode.resolveDuplicatesPerPatricGenome(proteinAlignment)
     proteinAlignment.sort()
-    proteinAlignments[pgfamId] = proteinAlignment
+    proteinAlignments[homologId] = proteinAlignment
     alignmentStats = phylocode.calcAlignmentStats(proteinAlignment)
     # dividing by sqrt(alignment length) yields result intermediate between sum_squared_freq and mean_squared_freq (where squared_freq is the within-column sum of squared state (letter, amino acid) frequency
-    alignmentScore[pgfamId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
-    proteinAlignmentStats[pgfamId] = alignmentStats
+    alignmentScore[homologId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
+    proteinAlignmentStats[homologId] = alignmentStats
 
 LOG.write("protein alignments completed. num prot als = %d\n"%(len(proteinAlignments)))
 # select top alignments by score
-singleCopyPgfams = sorted(alignmentScore, key=alignmentScore.get, reverse=True)
+singleCopyHomologs = sorted(alignmentScore, key=alignmentScore.get, reverse=True)
 
-if len(singleCopyPgfams) > args.maxGenes:
-    singleCopyPgfams=singleCopyPgfams[0:args.maxGenes]
-    LOG.write("\tselecting top %d single-family genes based on alignment score\n"%len(singleCopyPgfams))
+if len(singleCopyHomologs) > args.maxGenes:
+    singleCopyHomologs=singleCopyHomologs[0:args.maxGenes]
+    LOG.write("\tselecting top %d single-family genes based on alignment score\n"%len(singleCopyHomologs))
 
 filteredSingleCopyGenesPerGenome = {}
 for genome in genesPerGenome:
     filteredSingleCopyGenesPerGenome[genome] = 0
-for pgfam in singleCopyPgfams:
-    for genome in pgfamMatrix[pgfam]:
+for homolog in singleCopyHomologs:
+    for genome in homologMatrix[homolog]:
         filteredSingleCopyGenesPerGenome[genome] += 1
 
 genesPerGenomeFile = os.path.join(args.outputDirectory, args.outputBase+".genesPerGenome.txt")
@@ -331,31 +341,33 @@ with open(preflightFile, 'w') as F:
     #    sys.exit(1)
 
 codonAlignments = {}
-for pgfamId in singleCopyPgfams:
-    proteinAlignment = proteinAlignments[pgfamId]
+for homologId in singleCopyHomologs:
+    proteinAlignment = proteinAlignments[homologId]
     if args.debugMode:
-        LOG.write("alignment for %s has %d seqs\n"%(pgfamId, len(proteinAlignment)))
-    try:
-        codonAlignment = phylocode.proteinToCodonAlignment(proteinAlignment, genomeObjectGeneDna)
-        if codonAlignment: # if an error happened, we don't do next steps
-            phylocode.relabelSequencesByGenomeId(codonAlignment)
-            if codonAlignment.get_alignment_length() % 3:
-                raise Exception("codon alignment length not multiple of 3 for %s\n"%pgfamId)
-            if args.endGapTrimThreshold:
-                codonAlignment = phylocode.trimEndGaps(codonAlignment, args.endGapTrimThreshold)
-            codonAlignments[pgfamId] = codonAlignment
-            if args.debugMode:
-                LOG.write("dna alignment for %s has %d seqs\n"%(pgfamId, len(codonAlignment)))
-                #SeqIO.write(codonAlignment[pgfamId][:2], LOG, "fasta")
-    except Exception as e:
-        LOG.write("Exception aligning codons: %s\n"%str(e))
+        LOG.write("alignment for %s has %d seqs\n"%(homologId, len(proteinAlignment)))
+    #try:
+    #codonAlignment = phylocode.proteinToCodonAlignment(proteinAlignment, genomeObjectGeneDna)
+    codonAlignment = phylocode.gapCdsToProteins(proteinAlignment, genomeObjectGeneDna)
+    if codonAlignment: # if an error happened, we don't do next steps
+        phylocode.relabelSequencesByGenomeId(codonAlignment)
+        if codonAlignment.get_alignment_length() % 3:
+            raise Exception("codon alignment length not multiple of 3 for %s\n"%homologId)
+        if args.endGapTrimThreshold:
+            codonAlignment = phylocode.trimEndGaps(codonAlignment, args.endGapTrimThreshold)
+        codonAlignments[homologId] = codonAlignment
+        if args.debugMode:
+            LOG.write("dna alignment for %s has %d seqs\n"%(homologId, len(codonAlignment)))
+                #SeqIO.write(codonAlignment[homologId][:2], LOG, "fasta")
+    #except Exception as e:
+    #    LOG.write("Exception aligning codons: %s\n"%str(e))
+    #    raise(e)
     phylocode.relabelSequencesByGenomeId(proteinAlignment)
     for seqRecord in proteinAlignment:
         alignedTaxa.add(seqRecord.id)
     # trim protein alignment after codon alignment if trimming enabled
     if args.endGapTrimThreshold:
         proteinAlignment = phylocode.trimEndGaps(proteinAlignment, args.endGapTrimThreshold)
-        proteinAlignments[pgfamId] = proteinAlignment 
+        proteinAlignments[homologId] = proteinAlignment 
 
 numTaxa=len(alignedTaxa)
 
@@ -374,32 +386,32 @@ codonPositions = 0
 raxmlCommand=''
 if len(proteinAlignments):
 # write the genes included in each homology group (and those paralogs excluded)
-    pgfamsAndGenesIncludedInAlignmentFile = phyloFileBase+".pgfamsAndGenesIncludedInAlignment.txt"
-    filesToMoveToDetailsFolder.append(pgfamsAndGenesIncludedInAlignmentFile)
-    with open(pgfamsAndGenesIncludedInAlignmentFile, 'w') as F:
-        for pgfamId in singleCopyPgfams:
-            if pgfamId in proteinAlignments:
-                proteinPositions += proteinAlignments[pgfamId].get_alignment_length()
+    homologsAndGenesIncludedInAlignmentFile = phyloFileBase+".homologsAndGenesIncludedInAlignment.txt"
+    filesToMoveToDetailsFolder.append(homologsAndGenesIncludedInAlignmentFile)
+    with open(homologsAndGenesIncludedInAlignmentFile, 'w') as F:
+        for homologId in singleCopyHomologs:
+            if homologId in proteinAlignments:
+                proteinPositions += proteinAlignments[homologId].get_alignment_length()
                 genesNotIncluded = set()
-                for genome in pgfamMatrix[pgfamId]:
-                    genesNotIncluded.update(set(pgfamMatrix[pgfamId][genome]))
+                for genome in homologMatrix[homologId]:
+                    genesNotIncluded.update(set(homologMatrix[homologId][genome]))
                 genesIncluded = set()
-            F.write(pgfamId+"\tProteins\t")
-            for seqRecord in proteinAlignments[pgfamId]:
+            F.write(homologId+"\tProteins\t")
+            for seqRecord in proteinAlignments[homologId]:
                 originalId = seqRecord.annotations['original_id']
                 F.write("\t"+originalId)
                 if originalId not in genesNotIncluded:
-                    LOG.write("Problem: originalId %s not in genesForPgfams for %s\n"%(originalId, pgfamId))
+                    LOG.write("Problem: originalId %s not in genesForHomologs for %s\n"%(originalId, homologId))
                 else:
                     genesNotIncluded.remove(originalId)
                 genesIncluded.add(originalId)
             if len(genesNotIncluded):
                 F.write("\tdeletedParalogs: \t"+"\t".join(genesNotIncluded))
             F.write("\n")
-            if pgfamId in codonAlignments:
-                F.write(pgfamId+"\tCodons\t")
-                codonPositions += codonAlignments[pgfamId].get_alignment_length()
-                for seqRecord in codonAlignments[pgfamId]:
+            if homologId in codonAlignments:
+                F.write(homologId+"\tCodons\t")
+                codonPositions += codonAlignments[homologId].get_alignment_length()
+                for seqRecord in codonAlignments[homologId]:
                     originalId = seqRecord.annotations['original_id']
                     F.write("\t"+originalId)
                     genesIncluded.remove(originalId)
@@ -407,39 +419,39 @@ if len(proteinAlignments):
                     F.write("\tlackingCodonAlignment: \t"+"\t".join(genesIncluded))
                 F.write("\n")
             else:
-                F.write(pgfamId+"\nNo codon alignment\n")
+                F.write(homologId+"\nNo codon alignment\n")
         else:
-            F.write(pgfamId+"\tNo protein alignment\n")
+            F.write(homologId+"\tNo protein alignment\n")
         F.write("\n")
     F.close()
 
     if args.writePgfamAlignments:
-        for pgfam in proteinAlignments:
-            SeqIO.write(proteinAlignments[pgfam], pgfam+".faa", "fasta")
+        for homolog in proteinAlignments:
+            SeqIO.write(proteinAlignments[homolog], homolog+".faa", "fasta")
 
-    alignmentStatsFile = phyloFileBase+".pgfamAlignmentStats.txt"
+    alignmentStatsFile = phyloFileBase+".homologAlignmentStats.txt"
     filesToMoveToDetailsFolder.append(alignmentStatsFile)
     with open(alignmentStatsFile, "w") as F:
         first = True
-        for pgfam in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
-            stats = proteinAlignmentStats[pgfam]
+        for homolog in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
+            stats = proteinAlignmentStats[homolog]
             if first:
                 F.write("PGFam\t"+"\t".join(sorted(stats.keys()))+"\tUsedInAnalysis\n")
                 first = False
-            F.write(pgfam)
+            F.write(homolog)
             for key in sorted(stats):
                 val = stats[key]
                 if isinstance(val,int):
                     F.write("\t%d"%stats[key])
                 else:
                     F.write("\t%.6f"%stats[key])
-            F.write("\t"+str(pgfam in singleCopyPgfams))
+            F.write("\t"+str(homolog in singleCopyHomologs))
             F.write("\n")
 
 # change proteinAlignments to only include selected ones
     selectedAlignments = {}
-    for pgfam in singleCopyPgfams:
-        selectedAlignments[pgfam] = proteinAlignments[pgfam]
+    for homolog in singleCopyHomologs:
+        selectedAlignments[homolog] = proteinAlignments[homolog]
     proteinAlignments = selectedAlignments
 
 # it is possible all codon alignments failed, remove from intent to analyze
@@ -517,7 +529,7 @@ if len(proteinAlignments) and not args.deferRaxml:
     LOG.write("codonTree newick relabeled with genome names written to "+renamedNewickFile+"\n")
     LOG.flush()
 
-    if True or args.pathToFigtreeJar is not None:
+    if args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar):
         nexusFilesWritten = phylocode.generateNexusFile(originalNewick, phyloFileBase, nexus_template = None, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
         LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
         filesToMoveToDetailsFolder.append(nexusFilesWritten[0])
@@ -571,7 +583,7 @@ if len(deletedGenomes):
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Max Allowed Deletions", args.maxGenomesMissing))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Max Allowed Duplications", args.maxAllowedDups))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single-copy genes requested", args.maxGenes))
-HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single-copy genes found", len(singleCopyPgfams)))
+HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single-copy genes found", len(singleCopyHomologs)))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num protein alignments", len(proteinAlignments)))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num aligned amino acids", proteinPositions))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num CDS alignments", len(codonAlignments)))
@@ -627,31 +639,31 @@ HTML.write("</table>\n\n")
 if len(alignmentScore):
     HTML.write("<h2>Gene Family Statistics</h2>\n<table border='1'>\n")
     HTML.write("<p>Gene families are ranked by alignment score combining mean per-position variability, alignment length, and gappiness.</p>\n")
-    pgfamProduct = patric_api.getProductsForPgfamsByN(alignmentScore.keys())
+    homologProduct = patric_api.getProductsForPgfamsByN(alignmentScore.keys())
     statsToShow = ['num_pos', 'num_seqs', 'mean_squared_freq', 'prop_gaps']
     altHeadings = ['Align.<br>Length', 'Num<br>Seqs', 'Mean<br>Sqr Freq', 'Prop<br>Gaps']
     HTML.write("<tr><th>PGFam</th><th>Align.<br>Score</th><th>"+"</th><th>".join(altHeadings)+"</th><th>Used In<br>Analysis</th><th>Product</th></tr>\n")
-    for pgfam in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
-        stats = proteinAlignmentStats[pgfam]
-        HTML.write("<tr><td>%s</td><td>%.2f</td>"%(pgfam, alignmentScore[pgfam]))
+    for homolog in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
+        stats = proteinAlignmentStats[homolog]
+        HTML.write("<tr><td>%s</td><td>%.2f</td>"%(homolog, alignmentScore[homolog]))
         for key in statsToShow:
             val = stats[key]
             if isinstance(val,int):
                 HTML.write("<td>%d</td>"%stats[key])
             else:
                 HTML.write("<td>%.3f</td>"%stats[key])
-        HTML.write("<td>%s</td>\n"%str(pgfam in singleCopyPgfams))
-        HTML.write("<td>%s</td></tr>\n"%pgfamProduct[pgfam])
+        HTML.write("<td>%s</td>\n"%str(homolog in singleCopyHomologs))
+        HTML.write("<td>%s</td></tr>\n"%homologProduct[homolog])
     HTML.write("</table>\n")
 
-if args.debugMode or len(singleCopyPgfams) < args.maxGenes:
+if args.debugMode or len(singleCopyHomologs) < args.maxGenes:
     HTML.write("<h2>Strategies to Increase Single-Copy Gene Number</h2>\n")
-    if len(singleCopyPgfams) < args.maxGenes:
-        HTML.write("Number of single-copy genes (%d) was less than requested (%d).<br>\n"%(len(singleCopyPgfams), args.maxGenes))
+    if len(singleCopyHomologs) < args.maxGenes:
+        HTML.write("Number of single-copy genes (%d) was less than requested (%d).<br>\n"%(len(singleCopyHomologs), args.maxGenes))
     HTML.write("Examining the number of genes per genome in the 'Genome Statistics' table above may indicate incomplete or plasmid entries with few genes which may be removed.<br>\n")
     HTML.write("Criteria for calling single copy genes can be made more lenient by increasing Max Allowed Deletions and/or Max Allowed Duplications.<br>\n")
     #compute single copy counts for subsets of taxa, helps user identify optimal subsets for further analysis
-    genomeSubsetSingleCopy = phylocode.countSingleCopyForGenomeSubsets(pgfamMatrix, genomeIds, maxAllowedDups = args.maxAllowedDups)
+    genomeSubsetSingleCopy = phylocode.countSingleCopyForGenomeSubsets(homologMatrix, genomeIds, maxAllowedDups = args.maxAllowedDups)
     if args.debugMode:
         LOG.write("len(genomeSubsetSingleCopy) = %d\n"%len(genomeSubsetSingleCopy))
     if len(genomeSubsetSingleCopy) > 0:

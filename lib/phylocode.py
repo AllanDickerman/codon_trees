@@ -2,7 +2,7 @@ import sys
 import re
 import subprocess
 import os.path
-import warnings
+import patric_api
 from Bio import BiopythonWarning
 from Bio.Alphabet import IUPAC
 from Bio import AlignIO
@@ -11,13 +11,17 @@ from Bio import Alphabet
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.Align import MultipleSeqAlignment
-from collections import defaultdict
-import patric_api
-import StringIO
+from Bio.Data import CodonTable
 from Bio import BiopythonExperimentalWarning
+import warnings
 with warnings.catch_warnings():
     warnings.simplefilter('ignore', BiopythonExperimentalWarning)
     from Bio import codonalign
+from collections import defaultdict
+try:
+    from StringIO import StringIO ## for Python 2
+except ImportError:
+    from io import StringIO ## for Python 3
 
 Debug = False #shared across functions defined here
 LOG = sys.stderr
@@ -58,7 +62,7 @@ def getPgfamDistribution(genomeGenePgfamList):
         ggpMat[pgfam][genome].append(gene)
     return ggpMat
 
-def selectSingleCopyPgfams(pgfamMatrix, genomeIdList, requiredGenome=None, maxGenomesMissing=0, maxAllowedDups=0):
+def selectSingleCopyHomologs(pgfamMatrix, genomeIdList, requiredGenome=None, maxGenomesMissing=0, maxAllowedDups=0):
     # given a genome-gene-pgfam matrix
     # find the set of pgfam_ids which satisfy the maxGenomesMissing & maxAllowedDups criteria for specified genomes
     pgfamScore = {}
@@ -247,10 +251,19 @@ def checkMuscle():
     subprocess.check_call(['which', 'muscle'])
 
 def alignSeqRecordsMuscle(seqRecords):
-    muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    try:
+        #python3
+        muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    except TypeError:
+        # python2
+        muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     SeqIO.write(seqRecords, muscleProcess.stdin, 'fasta')
     muscleProcess.stdin.close()
-    alignment = AlignIO.read(muscleProcess.stdout, "fasta", alphabet=seqRecords[0].seq.alphabet)
+    alphabet=None
+    for s in seqRecords:
+        alphabet=s.seq.alphabet
+        break
+    alignment = AlignIO.read(muscleProcess.stdout, "fasta", alphabet=alphabet)
     alignment.sort()
     return(alignment)
 
@@ -414,15 +427,51 @@ def resolveDuplicatesPerPatricGenome(alignment):
         alignment = alignSeqRecordsMuscle(reducedSeqs)
     return alignment
 
+def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
+    """ to replace proteinToCodonAlignment() """
+    protSeqDict = {}
+    for seqRecord in proteinAlignment:
+        protSeqDict[seqRecord.id] = seqRecord
+    dnaFasta = patric_api.getSequenceOfFeatures(protSeqDict.keys(), 'dna')
+    #if Debug:
+    #     LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
+
+    dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO(dnaFasta), "fasta", alphabet=IUPAC.IUPACAmbiguousDNA()))
+    for seqId in protSeqDict:
+        if extraDnaSeqs and seqId in extraDnaSeqs:
+            dnaSeqDict[seqId] = extraDnaSeqs[seqId]
+            if Debug:
+                LOG.write("appending extra DNA seq %s\n"%seqId)
+    if set(dnaSeqDict.keys()) != set(protSeqDict.keys()):
+        raise Exception("Protein and DNA sets differ:\nProteins: %s\nDNA: %s\n"%(", ".join(sorted(protSeqDict)), ", ".join(sorted(dnaSeqDict))))
+    allGood = True
+    dnaAlignFasta = StringIO()
+    for seqId in dnaSeqDict:
+        dnaSeq = dnaSeqDict[seqId].seq
+        protSeq = protSeqDict[seqId].seq
+        dnaAlignFasta.write(">"+seqId+"\n")
+        dnaSeqPos = 0
+        for protPos in range(0, len(protSeq)):
+            if protSeq[protPos] == '-':
+                codon = '---'
+            else:
+                """ could in future use a codon table to check for matching """
+                codon = str(dnaSeq[dnaSeqPos:dnaSeqPos+3])
+                dnaSeqPos += 1
+            dnaAlignFasta.write(codon)
+        dnaAlignFasta.write("\n")
+    retval = AlignIO.read(StringIO(dnaAlignFasta.getvalue()), 'fasta')
+    return retval
+
 def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
     protSeqDict = {}
     for seqRecord in proteinAlignment:
         protSeqDict[seqRecord.id] = seqRecord
-    dnaFasta = patric_api.getDnaFastaForPatricIds(protSeqDict.keys())
+    dnaFasta = patric_api.getSequenceOfFeatures(protSeqDict.keys(), 'dna')
     #if Debug:
     #     LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
 
-    dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO.StringIO(dnaFasta), "fasta", alphabet=IUPAC.ambiguous_dna))
+    dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO(dnaFasta), "fasta", alphabet=IUPAC.IUPACAmbiguousDNA()))
     for seqId in protSeqDict:
         if extraDnaSeqs and seqId in extraDnaSeqs:
             dnaSeqDict[seqId] = extraDnaSeqs[seqId]
@@ -462,18 +511,22 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
             dnaSeqs[i].seq = "N"*shortfall + dnaSeqs[i].seq + "N"*shortfall
     """
     returnValue = None
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', BiopythonWarning)
-        try:
-            returnValue = codonalign.build(proteinAlignment, dnaSeqRecords, max_score=1000)
-            for dnaSeq in returnValue:
-                proteinRecord = protSeqDict[dnaSeq.id]
-                if proteinRecord.annotations:
-                    dnaSeq.annotations = proteinRecord.annotations.copy()
+    #with warnings.catch_warnings():
+        #warnings.simplefilter('ignore', BiopythonWarning)
+        #try:
+    #ambiguous_nucleotide_values = {'K': 'GT', 'M': 'AC', 'N': 'ACGT', 'S': 'CG', 'R': 'AG', 'W': 'AT', 'Y': 'CT'}
+    #ambiguous_protein_values = {'X': 'ACDEFGHIKLMNOPQRSTVWY', 'J': 'IL', 'B': 'DN', 'Z': 'EQ'}
+    #ambiguous_codon_table = CodonTable.AmbiguousCodonTable(CodonTable.ambiguous_dna_by_name["Standard"], IUPAC.IUPACAmbiguousDNA(), ambiguous_nucleotide_values, IUPAC.protein, ambiguous_protein_values)
+    #returnValue = codonalign.build(pro_align=proteinAlignment, nucl_seqs=dnaSeqRecords, codon_table=ambiguous_codon_table, max_score=1000)
+    returnValue = codonalign.build(pro_align=proteinAlignment, nucl_seqs=dnaSeqRecords, max_score=1000)
+    for dnaSeq in returnValue:
+        proteinRecord = protSeqDict[dnaSeq.id]
+        if proteinRecord.annotations:
+            dnaSeq.annotations = proteinRecord.annotations.copy()
 
-        except Exception as e:
-            LOG.write("problem in codonalign, skipping\n%s\n"%str(e))
-            #raise
+        #except Exception as e:
+        #    LOG.write("problem in codonalign, skipping\n%s\n"%str(e))
+        #    raise(e)
     return returnValue
     
 def relabelSequencesByGenomeId(seqRecordSet):
