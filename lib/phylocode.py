@@ -441,6 +441,7 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
         raise Exception("Protein and DNA sets differ:\nProteins: %s\nDNA: %s\n"%(", ".join(sorted(protSeqDict)), ", ".join(sorted(dnaSeqDict))))
     allGood = True
     dnaAlignFasta = StringIO()
+    prot_align_len = proteinAlignment.get_alignment_length()
     for seqId in dnaSeqDict:
         dnaSeq = dnaSeqDict[seqId].seq
         protSeq = protSeqDict[seqId].seq
@@ -454,6 +455,9 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
                 codon = str(dnaSeq[dnaSeqPos:dnaSeqPos+3])
                 dnaSeqPos += 1
             dnaAlignFasta.write(codon)
+        if protPos < prot_align_len:
+            dnaAlignFasta.write(''.join("---"*(prot_align_len - protPos)))
+            LOG.write("padding short seq {0}, of {1} pos out to {2}\n".format(seqId, protPos, prot_align_len))
         dnaAlignFasta.write("\n")
     retval = AlignIO.read(StringIO(dnaAlignFasta.getvalue()), 'fasta')
     return retval
