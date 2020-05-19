@@ -449,6 +449,9 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
     prot_align_len = proteinAlignment.get_alignment_length()
     for seqId in dnaSeqDict:
         dnaSeq = dnaSeqDict[seqId].seq
+        if len(dnaSeq) < 3 * prot_align_len:
+            # this is to handle cases where protein exists but DNA does not
+            dnaSeq += '---' * (prot_align_len - len(dnaSeq))
         protSeq = protSeqDict[seqId].seq
         dnaAlignFasta.write(">"+seqId+"\n")
         dnaSeqPos = 0
@@ -458,13 +461,17 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
             else:
                 """ could in future use a codon table to check for matching """
                 codon = str(dnaSeq[dnaSeqPos:dnaSeqPos+3])
-                dnaSeqPos += 1
+                dnaSeqPos += 3
             dnaAlignFasta.write(codon)
+        protPos += 1 # should now be equal to prot_align_len
+        if Debug:
+            LOG.write(seqId+" protPos={0}, dnaSeqPos={1}, orig_DNA_len={2}, orig_prot_len={3}\n".format(protPos, dnaSeqPos, len(dnaSeq), len(protSeq)))
         if protPos < prot_align_len:
             dnaAlignFasta.write(''.join("---"*(prot_align_len - protPos)))
-            LOG.write("padding short seq {0}, of {1} pos out to {2}\n".format(seqId, protPos, prot_align_len))
+            LOG.write("padding short seq {0}, of {1} pos out to {2}, orig_DNA_len={3}, orig_prot_len={4}\n".format(seqId, protPos, prot_align_len, len(dnaSeq), len(protSeq)))
         dnaAlignFasta.write("\n")
-    retval = AlignIO.read(StringIO(dnaAlignFasta.getvalue()), 'fasta')
+    dnaAlignFasta_text = dnaAlignFasta.getvalue()
+    retval = AlignIO.read(StringIO(dnaAlignFasta_text), 'fasta')
     return retval
 
 def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):

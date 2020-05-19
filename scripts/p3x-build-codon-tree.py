@@ -259,7 +259,7 @@ preflightTests.append(("Num genomes - maxGenomesMissing >= 4", len(genomeIds) - 
 singleCopyHomologs = phylocode.selectSingleCopyHomologs(homologMatrix, genomeIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
 
 LOG.write("got single copy homologs, num=%d\n"%len(singleCopyHomologs))
-
+LOG.flush()
 singleCopyGenesPerGenome = {}
 for genome in genesPerGenome:
     singleCopyGenesPerGenome[genome] = 0
@@ -339,7 +339,7 @@ with open(preflightFile, 'w') as F:
     #    F.write("exiting\n")
     #    F.close()
     #    sys.exit(1)
-
+LOG.flush()
 codonAlignments = {}
 for homologId in singleCopyHomologs:
     proteinAlignment = proteinAlignments[homologId]
