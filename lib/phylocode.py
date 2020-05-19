@@ -251,7 +251,12 @@ def checkMuscle():
     subprocess.check_call(['which', 'muscle'])
 
 def alignSeqRecordsMuscle(seqRecords):
-    muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        #python3
+        muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    except TypeError:
+        # python2
+        muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     SeqIO.write(seqRecords, muscleProcess.stdin, 'fasta')
     muscleProcess.stdin.close()
     alphabet=None
