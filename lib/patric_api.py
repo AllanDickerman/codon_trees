@@ -150,7 +150,7 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
         #query="in(patric_id,("+",".join(map(urllib.quote, feature_ids[start:end]))+"))"
         query="in(patric_id,("+",".join(feature_ids[start:end])+"))"
         query += "&limit(%d)"%len(feature_ids)
-        response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/%s+fasta'%seq_type})
+        response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/%s+fasta'%seq_type}, verify= not Debug)
         if not response.ok:
             errorMessage= "Error code %d returned by %s in getSequenceOfFeatures\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
             LOG.write(errorMessage)
@@ -165,6 +165,7 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
         start += max_per_query
     return retval
 
+"""
 def getProteinFastaForPatricIds(feature_ids):
     max_per_query=100
     start = 0
@@ -188,7 +189,7 @@ def getProteinFastaForPatricIds(feature_ids):
                     line = "|".join(parts[:2])
             retval += line+"\n"
     return retval
-    
+
 def getDnaFastaForPatricIds(patricIds):
     query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
     query += "&limit(%d)"%len(patricIds)
@@ -209,7 +210,8 @@ def getDnaFastaForPatricIds(patricIds):
                 line = "|".join(parts[:2])
         idsFixedFasta += line+"\n"
     return idsFixedFasta
-    
+"""
+
 def getProteinsFastaForGenomeId(genomeId):
     query="in(genome_id,("+genomeId+"))"
     query += "&limit(25000)"
@@ -339,7 +341,7 @@ def get_homologs_for_genomes(genomeIdSet, scope='global'):
         # select genes from specified genome, be a CDS, and have a pgfam or plfam id starting with 'P'
         query += "&select(genome_id,patric_id,"+target_family_type+")"
         query += "&limit(25000)"
-        response = Session.get(Base_url+"genome_feature/", params=query) #, 
+        response = Session.get(Base_url+"genome_feature/", params=query, verify= not Debug) #, 
         """
         req = requests.Request('POST', Base_url+"genome_feature/", data=query)
         prepared = Session.prepare_request(req) #req.prepare()

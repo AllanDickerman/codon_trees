@@ -253,7 +253,7 @@ def checkMuscle():
 def alignSeqRecordsMuscle(seqRecords):
     try:
         #python3
-        muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
     except TypeError:
         # python2
         muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
@@ -264,6 +264,18 @@ def alignSeqRecordsMuscle(seqRecords):
         alphabet=s.seq.alphabet
         break
     alignment = AlignIO.read(muscleProcess.stdout, "fasta", alphabet=alphabet)
+    alignment.sort()
+    return(alignment)
+
+def alignSeqRecordsMafft(seqRecords):
+    mafftProcess = subprocess.Popen(['mafft', '--quiet', '--auto', '-'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+    SeqIO.write(seqRecords, mafftProcess.stdin, 'fasta')
+    mafftProcess.stdin.close()
+    alphabet=None
+    for s in seqRecords:
+        alphabet=s.seq.alphabet
+        break # only need first one
+    alignment = AlignIO.read(mafftProcess.stdout, "fasta", alphabet=alphabet)
     alignment.sort()
     return(alignment)
 
