@@ -247,8 +247,16 @@ def generateFigtreeImage(nexusFile, numTaxa=0, figtreeJar=None, imageFormat="PDF
     subprocess.call(figtreeCommand, stdout=LOG)
     return imageFileName
 
-def checkMuscle():
-    subprocess.check_call(['which', 'muscle'])
+def checkCommandline(program):
+    found = False
+    LOG.write("checking for {} on commandline:\n".format(program))
+    try:
+        subprocess.check_call(['which', program], stdout=LOG)
+        found = True
+    except Exception:
+        pass
+    LOG.write("found = {}\n".format(found))
+    return found
 
 def alignSeqRecordsMuscle(seqRecords):
     try:

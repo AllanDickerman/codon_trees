@@ -33,7 +33,7 @@ parser.add_argument("--bootstrapReps", metavar="#", type=int, default=100, help=
 parser.add_argument("--maxGenomesMissing", metavar="#", type=int, default=0, help="genomes allowed to lack a member of any homolog group")
 parser.add_argument("--maxAllowedDups", metavar="maxDups", type=int, default=0, help="duplicated gene occurrences allowed within homolog group")
 
-parser.add_argument("--aligner", metavar="program", type=str, choices=('muscle', 'mafft'), help="program to align protein sequences")
+parser.add_argument("--aligner", metavar="program", type=str, choices=('muscle', 'mafft'), default="mafft", help="program to align protein sequences")
 parser.add_argument("--endGapTrimThreshold", metavar="maxPropGaps", type=float, default=0.5, help="stringency of end-gap trimming, 0-1.0, lower for less trimming")
 parser.add_argument("--raxmlExecutable", metavar="program_name", type=str, default="raxml", help="program to call, possibly with path")
 parser.add_argument("--rateModel", metavar="model", type=str, choices = ['CAT', 'GAMMA'], default="CAT", help="variable rate category model CAT|GAMMA")
@@ -44,7 +44,7 @@ parser.add_argument("--threads", "-t", metavar="T", type=int, default=2, help="t
 parser.add_argument("--deferRaxml", action='store_true', help="does not run raxml")
 parser.add_argument("--writePgfamAlignments", action='store_true', help="write fasta alignment per homolog used for tree")
 parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of counts per homolog per genome")
-parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="to generate PDF: java -jar path.jar -graphic PDF CodonTree.nex CodonTree.pdf")
+parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="not needed if figtree executable on path")
 parser.add_argument("--universalRolesFile", type=str, metavar="path", help="path to file with universal roles to select conserved genes")
 parser.add_argument("--focusGenome", metavar="id", type=str, help="to be highlighted in color in Figtree")
 parser.add_argument("--debugMode", action='store_true', help="more output to log file")
@@ -292,6 +292,7 @@ proteinAlignments = {}
 proteinAlignmentStats = {}
 alignmentScore = {}
 alignedTaxa=set()
+protein_alignment_time = time()
 for homologId in singleCopyHomologs:
     geneIdSet = set()
     for genome in homologMatrix[homologId]:
@@ -318,7 +319,8 @@ for homologId in singleCopyHomologs:
     alignmentScore[homologId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
     proteinAlignmentStats[homologId] = alignmentStats
 
-LOG.write("Protein alignments completed. Number = %d\n"%(len(proteinAlignments)))
+protein_alignment_time = time() - protein_alignment_time
+LOG.write("Protein alignments completed. Number = %d, time = %.1f\n"%(len(proteinAlignments), protein_alignment_time))
 # select top alignments by score
 singleCopyHomologs = sorted(alignmentScore, key=alignmentScore.get, reverse=True)
 
@@ -466,23 +468,29 @@ if len(proteinAlignments):
     if len(codonAlignments) == 0:
         args.analyzeCodons = False
 
+    raxml_command_lines = []
+    raxml_analysis_goal = []
+    raxml_process_time = []
 # finally, output concatenated protein and/or DNA alignment and partitions and raxml command to appropriate files
     startTree = None
     if args.analyzeProteins and args.proteinModel == "AUTO":
         # analyze just protein data with model AUTO, parse output to find best protein model
         # use output tree as starting tree to save time
         LOG.write("running raxml on proteins with model = 'AUTO' to find best model for proteins.\n")
+        raxml_analysis_goal.append("Analyze proteins with model 'AUTO' to find best substitution model.")
         proteinFileBase = phyloFileBase+"_proteins"
         proteinAlignmentFile = proteinFileBase+".phy"
         phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, proteinAlignmentFile)
         prot_auto_model = "PROT"+args.rateModel+"AUTO"
         raxmlCommand = [args.raxmlExecutable, "-s", proteinAlignmentFile, "-n", proteinFileBase, "-m", prot_auto_model, "-p", "12345", "-T", str(args.threads), '-e', '10']
         LOG.write("command = "+" ".join(raxmlCommand)+"\n")
+        raxml_command_lines.append(" ".join(raxmlCommand))
+        proc_start_time = time()
         return_code = subprocess.call(raxmlCommand, stdout=LOG, stderr=LOG)
+        raxml_process_time.append(time() - proc_start_time)
         LOG.write("return code from 'AUTO' run was "+str(return_code)+"\n")
         if return_code != 0:
-            LOG.flush()
-            exit(0)
+            LOG.write("raxml run to find best protein model failed. Defaulting to model LG")
 
         args.proteinModel = "LG" # default if we don't find answer
         if os.path.exists("RAxML_info."+proteinFileBase):
@@ -499,7 +507,7 @@ if len(proteinAlignments):
             startTree = "RAxML_bestTree."+proteinFileBase
         else:
             LOG.write("Could not find output from running raxml on proteins alone. Cannot specify best protein model. Defaulting to '{}'\n".format(args.proteinModel))
-
+    raxmlCommand=[]
     if args.analyzeProteins and args.analyzeCodons:
         alignmentFile = phyloFileBase+".phy"
         filesToMoveToDetailsFolder.append(alignmentFile)
@@ -539,16 +547,19 @@ if len(proteinAlignments):
     with open(raxmlCommandFile, 'w') as F:
         F.write(" ".join(raxmlCommand)+"\n")
     filesToMoveToDetailsFolder.append(raxmlCommandFile)
+    raxml_command_lines.append(" ".join(raxmlCommand))
 
 genomeIdToName = patric_api.getNamesForGenomeIdsByN(allGenomeIds)
 svgTreeImage = None
 if len(proteinAlignments) and not args.deferRaxml:
+    raxml_analysis_goal.append("Find best tree.")
     LOG.write("prepare to run raxml.\n")
     #remove RAxML files that clash in name, their existence blocks raxml from running
     for fl in glob.glob("RAxML_*"+phyloFileBase):
         os.remove(fl)
     raxml_start_time = time()
     result_code = subprocess.call(raxmlCommand, shell=False, stdout=LOG, stderr=LOG)
+    raxml_process_time.append(time() - raxml_start_time)
     
     LOG.write("raxml completed: elapsed seconds = %f\n"%(time() - raxml_start_time))
     LOG.flush()
@@ -559,12 +570,17 @@ if len(proteinAlignments) and not args.deferRaxml:
     if args.bootstrapReps > 0:
         raxmlNewickFileName = "RAxML_bipartitions."+phyloFileBase
     elif os.path.exists("RAxML_rellBootstrap."+phyloFileBase):
-        fileBase = "ultrafast_bootstraps"
+        raxml_analysis_goal.append("Map RELL support values onto best tree.")
+        fileBase = "tree_with_rell_support"
         raxmlCommand = [args.raxmlExecutable, "-s", alignmentFile, "-n", fileBase, "-m",  "GTRCAT", "-f", "b", "-t", "RAxML_bestTree."+phyloFileBase, "-z", "RAxML_rellBootstrap."+phyloFileBase]
+        raxml_command_lines.append(" ".join(raxmlCommand))
+        proc_start_time = time()
         result_code = subprocess.call(raxmlCommand, shell=False, stdout=LOG, stderr=LOG)
+        raxml_process_time.append(time() - proc_start_time)
         LOG.write("Mapped ultrafast bootstrap support values onto tree.\n")
         if os.path.exists("RAxML_bipartitions."+fileBase):
             raxmlNewickFileName = "RAxML_bipartitions."+fileBase
+            filesToMoveToDetailsFolder.append("RAxML_info."+fileBase)
         
     if os.path.exists(raxmlNewickFileName):
         F = open(raxmlNewickFileName)
@@ -585,7 +601,8 @@ if len(proteinAlignments) and not args.deferRaxml:
         LOG.write("codonTree newick relabeled with genome names written to "+renamedNewickFile+"\n")
         LOG.flush()
 
-        if args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar):
+        figtree_found = phylocode.checkCommandline("figtree")
+        if figtree_found or (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
             nexusFilesWritten = phylocode.generateNexusFile(originalNewick, phyloFileBase, nexus_template = None, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
             LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
             filesToMoveToDetailsFolder.append(nexusFilesWritten[0])
@@ -594,11 +611,15 @@ if len(proteinAlignments) and not args.deferRaxml:
             for nexusFile in nexusFilesWritten:
                 for imageFormat in ("PNG", "SVG", "PDF"):
                     imageFile = phylocode.generateFigtreeImage(nexusFile, numTaxa=len(allGenomeIds), figtreeJar=args.pathToFigtreeJar, imageFormat=imageFormat)
-                    if "_tipsAligned" in nexusFile:
-                        filesToMoveToDetailsFolder.append(imageFile)
-                    if imageFormat == "SVG" and not svgTreeImage:
-                        svgTreeImage = imageFile
-                    LOG.write("created figtree figure: %s\n"%imageFile)
+                    LOG.write("created figtree figure: {}\n".format(imageFile))
+                    if os.path.exists(imageFile):
+                        if "_tipsAligned" in nexusFile:
+                            filesToMoveToDetailsFolder.append(imageFile)
+                        if imageFormat == "SVG" and not svgTreeImage:
+                            svgTreeImage = imageFile
+                            LOG.write("svg image for report: {}\n".format(imageFile))
+                    else:
+                        LOG.write("image file {} does not exist.\n".format(imageFile))
 
 LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(time()))+"\n")
 LOG.write("Total job duration %d seconds\n"%(time()-starttime))
@@ -633,7 +654,7 @@ HTML.write("<p><a target='_parent' href='detail_files/'>Files with more details<
 
 
 HTML.write("<h2>Tree Analysis Statistics</h2>\n<table border='1'>\n")
-HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num genomes", len(genomeIds)))
+HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Genomes with data", len(genomeIds)))
 if len(deletedGenomes):
     HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Genomes lacking data", len(deletedGenomes)))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Max Allowed Deletions", args.maxGenomesMissing))
@@ -641,37 +662,58 @@ HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Max Allowed Duplications
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single-copy genes requested", args.maxGenes))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Single-copy genes found", len(singleCopyHomologs)))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num protein alignments", len(proteinAlignments)))
+HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("Alignment program", args.aligner))
+HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("Protein alignment time", protein_alignment_time))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num aligned amino acids", proteinPositions))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num CDS alignments", len(codonAlignments)))
 HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num aligned nucleotides", codonPositions))
+if args.analyzeProteins:
+    HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("Protein Model", args.proteinModel))
 m = re.search("/awe/work/../../([^_]+)_/", os.getcwd())
 if m:
     patricJobId = m.group(1)
     HTML.write("<tr><td><b>PATRIC Job Idx=</b></td><td>"+patricJobId+"</td></tr>\n")
 # tree analysis may or may not have completed, report only if appropriate
 raxmlInfoFile = "RAxML_info."+phyloFileBase
+
+raxmlWarnings = []
 if os.path.exists(raxmlInfoFile):
     filesToMoveToDetailsFolder.append(raxmlInfoFile)
     try:
         raxmlInfo = open(raxmlInfoFile).read()
-        raxmlVersion = re.search("RAxML version ([\d\.]+)", raxmlInfo).group(1)
-        HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML Version", raxmlVersion))
-        raxmlWarnings = []
+        m = re.search("Final.*core of best tree ([-\d\.]+)", raxmlInfo)
+        if m:
+            raxmlLikelihood = m.group(1) 
+            raxmlLikelihood = float(raxmlLikelihood)
+            HTML.write("<tr><td><b>%s</b></td><td>%.4f</td></tr>\n"%("RAxML Likelihood", raxmlLikelihood))
+        m = re.search("RAxML version ([\d\.]+)", raxmlInfo)
+        if m:  
+            raxmlVersion = m.group(1)
+            HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML Version", raxmlVersion))
         for m in re.finditer("IMPORTANT WARNING: (Sequences.*?identical)", raxmlInfo):
             raxmlWarnings.append(m.group(1))
-        if len(raxmlWarnings):
-            HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML Warnings", "<br>\n".join(raxmlWarnings)))
-        raxmlDuration = re.search("Overall execution time for full ML analysis: (.*) secs", raxmlInfo).group(1) 
-        raxmlDuration = float(raxmlDuration)
-        HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("RAxML Duration", raxmlDuration))
+        m = re.search("Overall execution time.*: ([\d\.]*) secs", raxmlInfo) 
+        if m:
+            raxmlDuration = m.group(1) 
+            raxmlDuration = float(raxmlDuration)
+            HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("RAxML Duration", raxmlDuration))
     except Exception as e:
         LOG.write("Exception parsing %s: %s\n"%(raxmlInfoFile, str(e))) 
 HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("Total Job Duration", time()-starttime))
 HTML.write("</table>\n\n")
-if raxmlCommand and len(raxmlCommand):
-    HTML.write("<h2>RAxML Command Line</h2>"+" ".join(raxmlCommand)+"\n")
+if raxml_command_lines and len(raxml_command_lines):
+    HTML.write("<h2>RAxML Command Line</h2>")
+    for i, line in enumerate(raxml_command_lines):
+        HTML.write("<p>Goal: "+raxml_analysis_goal[i]+"<br>\n")
+        HTML.write(line+"<br>\n")
+        HTML.write("Process time: {:.3f} seconds<br>\n".format(raxml_process_time[i]))
 else:
     HTML.write("<h2>RAxML Not Run</h2>\n")
+
+if len(raxmlWarnings):
+    HTML.write("<h2>RAxML Warnings</h2>\n")
+    for line in raxmlWarnings:
+        HTML.write(line+"<br>\n")
 
 HTML.write("<h2>Genome Statistics</h2>\n<table border='1'>\n")
 HTML.write("<tr><th>GenomeId</th><th>Total Genes</th><th>Single Copy</th><th>Used</th><th>Name</th></tr>\n")
@@ -748,18 +790,22 @@ if not os.path.isdir(detailsDirectory):
 numMoved=0
 for fn in filesToMoveToDetailsFolder:
     LOG.write("\t"+fn+"\t"+os.path.join(detailsDirectory, fn)+"\n")
-    os.rename(fn, os.path.join(detailsDirectory, fn))
-    numMoved += 1
+    if os.path.exists(fn):
+        os.rename(fn, os.path.join(detailsDirectory, fn))
+        numMoved += 1
+    else:
+        LOG.write("tried to move {} to detailsDirectory, but not found.\n".format(fn))
 LOG.write("files moved: %d\n"%numMoved)
 filesToDelete.extend(glob.glob("RAxML*"))
 if os.path.exists(phyloFileBase+".phy.reduced"):
     filesToDelete.append(phyloFileBase+".phy.reduced")
-numDeleted = 0
-for fn in filesToDelete:
-    os.remove(fn)
-    numDeleted += 1
-    LOG.write("\t"+fn+"\n")
-LOG.write("files deleted: %d\n"%numDeleted)
+if not args.debugMode:
+    numDeleted = 0
+    for fn in filesToDelete:
+        os.remove(fn)
+        numDeleted += 1
+        LOG.write("\t"+fn+"\n")
+    LOG.write("files deleted: %d\n"%numDeleted)
 logfileName = os.path.basename(logfileName)
 LOG.write("finally, will move this file, %s, to %s\n"%(logfileName, detailsDirectory))
 LOG.close()
