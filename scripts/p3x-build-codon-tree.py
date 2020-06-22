@@ -137,6 +137,8 @@ preflightTests = []
 preflightTests.append(("phylocode.which(args.raxmlExecutable) != None", phylocode.which(args.raxmlExecutable) != None))
 preflightTests.append(("phylocode.which('muscle') != None", phylocode.which('muscle') != None))
 
+authenticate()
+
 # update genomeIds set
 if args.genomeIdsFile:
     for filename in args.genomeIdsFile:
@@ -152,7 +154,6 @@ if args.genomeObjectFile:
 LOG.flush()
 
 if args.genomeGroupName:
-    authenticate()
     if not patric_api.PatricUser:
         raise Exception("No patric user is defined, required for using genome group.\n")
     for groupName in args.genomeGroupName:
@@ -509,7 +510,7 @@ if len(proteinAlignments):
             startTree = "RAxML_bestTree."+proteinFileBase
         else:
             LOG.write("Could not find output from running raxml on proteins alone. Cannot specify best protein model. Defaulting to '{}'\n".format(protein_substitution_model))
-    raxmlCommand=[]
+    eaxmlCommand=[]
     if args.analyzeProteins and args.analyzeCodons:
         alignmentFile = phyloFileBase+".phy"
         filesToMoveToDetailsFolder.append(alignmentFile)
@@ -676,7 +677,7 @@ HTML.write("<tr><td><b>%s</b></td><td>%d</td></tr>\n"%("Num aligned nucleotides"
 if args.analyzeProteins:
     title = "Protein substitution model"
     if protein_substitution_model != args.proteinModel:
-        title = "Protein model selected by RAxML"
+        title = "Best protein model found by RAxML"
     HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%(title, protein_substitution_model))
 m = re.search("/awe/work/../../([^_]+)_/", os.getcwd())
 if m:
@@ -709,7 +710,7 @@ if os.path.exists(raxmlInfoFile):
 raxmlDuration = 0 
 for seconds in raxml_process_time:
     raxmlDuration += seconds
-    HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("RAxML Duration", raxmlDuration))
+HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("RAxML Duration", raxmlDuration))
 HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("Total Job Duration", time()-starttime))
 HTML.write("</table>\n\n")
 if raxml_command_lines and len(raxml_command_lines):
@@ -720,6 +721,10 @@ if raxml_command_lines and len(raxml_command_lines):
         HTML.write("Process time: {:.3f} seconds<br>\n".format(raxml_process_time[i]))
 else:
     HTML.write("<h2>RAxML Not Run</h2>\n")
+
+if os.path.exists(partitionFile):
+    HTML.write("<h2>Codon and Amino Acid Partitions Analyzed</h2>\n")
+    HTML.write("<pre>\n"+open(partitionFile).read()+"</pre>\n")
 
 if len(raxmlWarnings):
     HTML.write("<h2>RAxML Warnings</h2>\n")
