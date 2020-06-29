@@ -2,100 +2,135 @@ Codon Trees
 ==========
 A Python system to build bacterial phylogenies exploiting PATRIC homology groups (PGFams) and genome annotations. It uses RAxML for tree building.
 
-Given a list of genome IDs (in a file, one per line), the code will request from PATRIC all the PGFams for those genomes.  It will analyse the distribution of PGFams among genomes and select those that are universally single-copy (or within specified limits of duplications and absences).
+Given a list of genome IDs (in a file, one per line), the code will request from PATRIC all the gene families for thoss genomes (--homologyScope 'global' yields PGFams, 'local yields PLFams).  It will analyse the distribution of homology groups among genomes and select genes that are single-copy (or within specified limits of allowed duplications and absences).
 
 The target number of genes can be specified to limit the run times. Good performance can be achieved with 10 to 20 genes. Resolving close relationships may benefit from requesting 100 or more genes.
 
-A set of outgroup genomes can be specified which will be included where possible, though not subject to constraints on duplications and absences. Trees are not explicitly rooted by these taxa.
+It will align the protein sequences for the selected genes using the program mafft (or muscle if specified by the --aligner option).
+In the case of multiple gene copies in a single genome, when allowed by duplication tolerances, a single one is selected based on highest similarity to the other genes in the alignment.
 
-It will align the protein sequences for the selected PGFams using the program muscle.
-In the case of multiple gene copies in a single genome, when allowed by duplication tollerances, a single one is selected based on highest similarity to the other genes in the alignment.
+It will then align the DNA sequences to the protein alignment, 3 nucleotides per amino acid, yielding nucleotide sequences aligned on a per-codon basis. This assumes that the coding sequences are strictly in frame.
 
-It will then use the Codon Alignment functionality in BioPython to map the DNA sequences to the protein alignment yielding nucleotide sequences aligned on a per-codon basis.
+After aligning codons to proteins, protein alignments are end-trimmed to a specified proportion of occupancy (devault 0.5). Any end positions which are more gaps than this are trimmed back. Nucleotide alignments are end-trimmed to match.
+
 The protein and codon alignments are concatenated into a large data matrix for phylogenetic analysis by RAxML, allowing different rates for the amino acids and 1st, 2nd, and 3rd codon positions.
 
-The 'fasta bootstrapping' option of RAxML can be enabled to put support values on the tree.
+If the --proteinModel option is AUTO (the default), then an initial RAxML analysis is performed on the aligned proteins to find the best protein model.
+
+The 'fasta bootstrapping' option of RAxML can be enabled to put support values on the tree. If --bootstrapReps is set to zero, then 'fast boostrapping' is not performed but branch support values are found using the RELL method (http://www.ncbi.nlm.nih.gov/pubmed/23418397) using the "-f D" option of RAxML.
 
 Requirements
 ------------
 1. Python 2.7 (and modules: requests, urllib, a few others)
 2. BioPython
 3. RAxML (https://sco.h-its.org/exelixis/web/software/raxml/index.html)
-4. Muscle (https://www.drive5.com/muscle/)
-
-Optional: Figtree (http://tree.bio.ed.ac.uk/software/figtree) to automate generation of graphics.
+4. Muscle (https://www.drive5.com/muscle/) or mafft (https://mafft.cbrc.jp/alignment/software/).
+5. Figtree (http://tree.bio.ed.ac.uk/software/figtree) to automate generation of graphics. (Optional)
 
 Installation
 ------------
-Have the 'lib' directory (including phylocode.py and patric_api.py and figtree.nex) on the $PYTHONPATH environment variable.
-Have raxml and muscle on the $PATH (you can specify an alternate name for raxml, such as raxml-HPC)
+Have phylocode.py and patric_api.py on the $PYTHONPATH environment variable.
+Have raxml and mafft or muscle on the $PATH (you can specify an alternate name for raxml, such as raxml-HPC).
+Have the figtree executable on the $PATH, or specify the path to the jar file (--pathToFigtreeJar).
 
 Usage
 -----
-usage: p3x-build-codon-tree.py [-h] [--genomeObjectFile file]
-                               [--outgroupIdsFile file] [--maxGenes #]
+usage: p3x-build-codon-tree.py [-h] [--parametersJson file.json]
+                               [--outputBase filebase]
+                               [--outputDirectory out_dir]
+                               [--genomeIdsFile [file [file ...]]]
+                               [--genomeGroupName [name [name ...]]]
+                               [--genomeObjectFile file]
+                               [--genomePgfamGeneFile file]
+                               [--optionalGenomeIdsFile file]
+                               [--homolog_scope global/local] [--maxGenes #]
+                               [--excessGenesProp prop] [--excessGenesFixed #]
                                [--bootstrapReps #] [--maxGenomesMissing #]
-                               [--maxAllowedDups maxDups]
+                               [--maxAllowedDups maxDups] [--aligner program]
                                [--endGapTrimThreshold maxPropGaps]
                                [--raxmlExecutable program_name]
-                               [--rateModel rateModel]
-                               [--proteinModel substModel] [--analyzeCodons]
-                               [--analyzeProteins] [--numThreads T]
-                               [--deferRaxml] [--outputDirectory out_dir]
-                               [--pathToFigtree jar_file]
-                               [--focusGenome genome_id] [--debugMode]
-                               genomeIdsFile
+                               [--rateModel model] [--proteinModel model]
+                               [--analyzeCodons] [--analyzeProteins]
+                               [--threads T] [--deferRaxml]
+                               [--writePgfamAlignments] [--writePgfamMatrix]
+                               [--pathToFigtreeJar path]
+                               [--universalRolesFile path] [--focusGenome id]
+                               [--debugMode] [--authToken STRING]
+                               [--ignoreAuthEnv] [--ignoreAuthRC]
 
-positional arguments:
-  genomeIdsFile         file with PATRIC genome IDs, one per line, optional
-                        content after tab delimiter ignored
+Codon-oriented aligment and tree analysis of PATRIC protein families
 
 optional arguments:
   -h, --help            show this help message and exit
-  --genomeObjectFile file
-                        genome object (json file) to be added to ingroup
+  --parametersJson file.json
+                        parameters in json format (command line overrides)
                         (default: None)
-  --outgroupIdsFile file
-                        ougroup genome ids, one per line (or first column of
+  --outputBase filebase
+                        base name for output files, def=codontree (default:
+                        None)
+  --outputDirectory out_dir
+                        for output, create if needed (default: None)
+  --genomeIdsFile [file [file ...]]
+                        file with PATRIC genome IDs, one per line (or first
+                        column of TSV) (default: None)
+  --genomeGroupName [name [name ...]]
+                        name of user's genome group at PATRIC (default: None)
+  --genomeObjectFile file
+                        genome object (json file) (default: None)
+  --genomePgfamGeneFile file
+                        read geneIDs per PGFam per genome from this file
+                        (default: None)
+  --optionalGenomeIdsFile file
+                        optional genome ids, one per line (or first column of
                         TSV) (default: None)
+  --homolog_scope global/local
+                        use PGFams (global) or PLFams (local} (default:
+                        global)
   --maxGenes #          number of genes in concatenated alignment (default:
                         50)
+  --excessGenesProp prop
+                        multiplier of maxGenes to add to filter out low-
+                        scoring alignments (default: 0.5)
+  --excessGenesFixed #  fixed excess genes to add to filter out low-scoring
+                        alignments (default: 20)
   --bootstrapReps #     number of raxml 'fast boostrap' replicates (default:
-                        0)
+                        100)
   --maxGenomesMissing #
-                        ingroup genomes allowed to lack a member of any
-                        homolog group (default: 0)
+                        genomes allowed to lack a member of any homolog group
+                        (default: 0)
   --maxAllowedDups maxDups
                         duplicated gene occurrences allowed within homolog
                         group (default: 0)
+  --aligner program     program to align protein sequences (default: mafft)
   --endGapTrimThreshold maxPropGaps
-                        stringency of end-gap trimming, lower for less
+                        stringency of end-gap trimming, 0-1.0, lower for less
                         trimming (default: 0.5)
   --raxmlExecutable program_name
                         program to call, possibly with path (default: raxml)
-  --rateModel rateModel
-                        variable rate category model CAT|GAMMA (default: CAT)
-  --proteinModel substModel
-                        raxml protein substitution model (default: WAGF)
-  --analyzeCodons       analyze only codons (ignore amino acids) (default:
-                        False)
+  --rateModel model     variable rate category model CAT|GAMMA (default: CAT)
+  --proteinModel model  raxml protein substitution model (default: AUTO)
+  --analyzeCodons       analyze only codon nucleotides (default: False)
   --analyzeProteins     analyze only amino acids (default: False)
-  --numThreads T        number of threads for raxml (default: 2)
-  --deferRaxml          set this flag if you do not want raxml to be run
-                        automatically (you can run it manually later using the
-                        command file provided) (default: False)
-  --outputDirectory out_dir
-                        directory for output, create if it does not exist
-                        (default: None)
-  --pathToFigtree jar_file
-                        specify this to generate PDF graphic: java -jar
-                        pathToFigtree -graphic PDF CodonTree.nex CodonTree.pdf
-                        (default: None)
-  --focusGenome genome_id
-                        genome to be highlighted in color in Figtree (default:
-                        None)
-  --debugMode           turns on more progress output to log file (default:
+  --threads T, -t T     threads for raxml (default: 2)
+  --deferRaxml          does not run raxml (default: False)
+  --writePgfamAlignments
+                        write fasta alignment per homolog used for tree
+                        (default: False)
+  --writePgfamMatrix    write table of counts per homolog per genome (default:
                         False)
+  --pathToFigtreeJar path
+                        not needed if figtree executable on path (default:
+                        None)
+  --universalRolesFile path
+                        path to file with universal roles to select conserved
+                        genes (default: None)
+  --focusGenome id      to be highlighted in color in Figtree (default: None)
+  --debugMode           more output to log file (default: False)
+  --authToken STRING    patric authentication token (default: None)
+  --ignoreAuthEnv       turn off authorization by environmental variable
+                        (default: False)
+  --ignoreAuthRC        turn off authorization by file (default: False)
+
 
 Input
 -----
