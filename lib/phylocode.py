@@ -247,13 +247,21 @@ def generateFigtreeImage(nexusFile, numTaxa=0, figtreeJar=None, imageFormat="PDF
     subprocess.call(figtreeCommand, stdout=LOG)
     return imageFileName
 
-def checkMuscle():
-    subprocess.check_call(['which', 'muscle'])
+def checkCommandline(program):
+    found = False
+    LOG.write("checking for {} on commandline:\n".format(program))
+    try:
+        subprocess.check_call(['which', program], stdout=LOG)
+        found = True
+    except Exception:
+        pass
+    LOG.write("found = {}\n".format(found))
+    return found
 
 def alignSeqRecordsMuscle(seqRecords):
     try:
         #python3
-        muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
     except TypeError:
         # python2
         muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
@@ -264,6 +272,18 @@ def alignSeqRecordsMuscle(seqRecords):
         alphabet=s.seq.alphabet
         break
     alignment = AlignIO.read(muscleProcess.stdout, "fasta", alphabet=alphabet)
+    alignment.sort()
+    return(alignment)
+
+def alignSeqRecordsMafft(seqRecords):
+    mafftProcess = subprocess.Popen(['mafft', '--quiet', '--auto', '-'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+    SeqIO.write(seqRecords, mafftProcess.stdin, 'fasta')
+    mafftProcess.stdin.close()
+    alphabet=None
+    for s in seqRecords:
+        alphabet=s.seq.alphabet
+        break # only need first one
+    alignment = AlignIO.read(mafftProcess.stdout, "fasta", alphabet=alphabet)
     alignment.sort()
     return(alignment)
 
