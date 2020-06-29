@@ -1,26 +1,20 @@
 Codon Trees
 ==========
-A Python system to build phylogenies for whole bacterial genomes exploiting PATRIC annotation including PGFams (homology groups).
+A Python system to build bacterial phylogenies exploiting PATRIC homology groups (PGFams) and genome annotations. It uses RAxML for tree building.
 
-Given a list of genome IDs (in a file, one per line), the code will request from PATRIC all the PGFams for those genomes.
+Given a list of genome IDs (in a file, one per line), the code will request from PATRIC all the PGFams for those genomes.  It will analyse the distribution of PGFams among genomes and select those that are universally single-copy (or within specified limits of duplications and absences).
 
-It will analyse the distribution of PGFams among genomes and select those that are universally single-copy (or within specified limits of duplications and absences).
-The maximum number of genes can be specified to limit the run times.
+The target number of genes can be specified to limit the run times. Good performance can be achieved with 10 to 20 genes. Resolving close relationships may benefit from requesting 100 or more genes.
 
-A set of outgroup genomes can be specified which will be included where possible without regard to duplications or absences.
+A set of outgroup genomes can be specified which will be included where possible, though not subject to constraints on duplications and absences. Trees are not explicitly rooted by these taxa.
 
 It will align the protein sequences for the selected PGFams using the program muscle.
-In the case of multiple gene copies in a single genome, a single one is selected based on highest similarity to the other genes in the alignment.
-It will then use the Codon Alignment functionality in BioPython to map the DNA sequences to the protein alignment. 
+In the case of multiple gene copies in a single genome, when allowed by duplication tollerances, a single one is selected based on highest similarity to the other genes in the alignment.
 
-This yields nucleotide sequences aligned on a per-codon basis.
-The codon alignments are concatenated into a large data matrix for phylogenetic analysis by RAxML, allowing different rates for the 
-1st, 2nd, and 3rd codon positions.
+It will then use the Codon Alignment functionality in BioPython to map the DNA sequences to the protein alignment yielding nucleotide sequences aligned on a per-codon basis.
+The protein and codon alignments are concatenated into a large data matrix for phylogenetic analysis by RAxML, allowing different rates for the amino acids and 1st, 2nd, and 3rd codon positions.
 
-The protein alignments can also be included in the RAxML data matrix as a distinct partition (and appropriate substitution matrix specified).
 The 'fasta bootstrapping' option of RAxML can be enabled to put support values on the tree.
-
-The RAxML output is put into a directory named based on the input file of genome IDs (with "_dir" appended).
 
 Requirements
 ------------
@@ -29,10 +23,11 @@ Requirements
 3. RAxML (https://sco.h-its.org/exelixis/web/software/raxml/index.html)
 4. Muscle (https://www.drive5.com/muscle/)
 
+Optional: Figtree (http://tree.bio.ed.ac.uk/software/figtree) to automate generation of graphics.
+
 Installation
 ------------
-Have the p3_allan directory with python modules (phylocode.py and patric_api.py)
-in a location on the $PYTHONPATH or in the working directory.
+Have the 'lib' directory (including phylocode.py and patric_api.py and figtree.nex) on the $PYTHONPATH environment variable.
 Have raxml and muscle on the $PATH (you can specify an alternate name for raxml, such as raxml-HPC)
 
 Usage

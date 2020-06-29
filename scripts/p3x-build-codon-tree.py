@@ -684,8 +684,12 @@ if m:
     patricJobId = m.group(1)
     HTML.write("<tr><td><b>PATRIC Job Idx=</b></td><td>"+patricJobId+"</td></tr>\n")
 # tree analysis may or may not have completed, report only if appropriate
-raxmlInfoFile = "RAxML_info."+phyloFileBase
+branch_support_method = "RELL (Resampling Estimated Log Likelihoods)"
+if args.bootstrapReps > 0:
+    branch_support_method = "RAxML Fast Bootstrapping"
+HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("Branch support method", branch_support_method))
 
+raxmlInfoFile = "RAxML_info."+phyloFileBase
 raxmlWarnings = []
 if os.path.exists(raxmlInfoFile):
     filesToMoveToDetailsFolder.append(raxmlInfoFile)
@@ -697,11 +701,11 @@ if os.path.exists(raxmlInfoFile):
         if m:
             raxmlLikelihood = m.group(1) 
             raxmlLikelihood = float(raxmlLikelihood)
-            HTML.write("<tr><td><b>%s</b></td><td>%.4f</td></tr>\n"%("RAxML Likelihood", raxmlLikelihood))
+            HTML.write("<tr><td><b>%s</b></td><td>%.4f</td></tr>\n"%("RAxML likelihood", raxmlLikelihood))
         m = re.search("RAxML version ([\d\.]+)", raxmlInfo)
         if m:  
             raxmlVersion = m.group(1)
-            HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML Version", raxmlVersion))
+            HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML version", raxmlVersion))
         for m in re.finditer("IMPORTANT WARNING: (Sequences.*?identical)", raxmlInfo):
             raxmlWarnings.append(m.group(1))
         m = re.search("Overall execution time.*: ([\d\.]*) secs", raxmlInfo) 
@@ -710,8 +714,8 @@ if os.path.exists(raxmlInfoFile):
 raxmlDuration = 0 
 for seconds in raxml_process_time:
     raxmlDuration += seconds
-HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("RAxML Duration", raxmlDuration))
-HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("Total Job Duration", time()-starttime))
+HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("RAxML time", raxmlDuration))
+HTML.write("<tr><td><b>%s</b></td><td>%.1f seconds</td></tr>\n"%("Total time", time()-starttime))
 HTML.write("</table>\n\n")
 if raxml_command_lines and len(raxml_command_lines):
     HTML.write("<h2>RAxML Command Line</h2>")
@@ -723,7 +727,7 @@ else:
     HTML.write("<h2>RAxML Not Run</h2>\n")
 
 if os.path.exists(partitionFile):
-    HTML.write("<h2>Codon and Amino Acid Partitions Analyzed</h2>\n")
+    HTML.write("<h2>RAxML Codon and Amino Acid Partitions</h2>\n")
     HTML.write("<pre>\n"+open(partitionFile).read()+"</pre>\n")
 
 if len(raxmlWarnings):
