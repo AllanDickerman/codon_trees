@@ -54,7 +54,7 @@ parser.add_argument("--ignoreAuthRC", action='store_true', help="turn off author
 #parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and homologs from stored file matching genomeIdsFile if it exists")
 if len(sys.argv) == 1:
     parser.print_help()
-    exit(1)
+    sys.exit(1)
 args = parser.parse_args()
 starttime = time()
 genomeIds = set() # list of genome IDs for tree building (enforcing maxGenomesMissing and maxAllowedDupes)
@@ -305,7 +305,8 @@ for homologId in singleCopyHomologs:
         for geneId in homologMatrix[homologId][genomeId]:
             if genomeId == genomeObject_genomeId:
                 proteinSeqDict[geneId] = genomeObjectProteins[geneId]
-            proteinSeqDict[geneId].annotations["genome_id"] = genomeId
+            if geneId in proteinSeqDict:
+                proteinSeqDict[geneId].annotations["genome_id"] = genomeId
         #proteinSeqRecords.append(proteinSeqDict[proteinId])
     if args.debugMode:
         LOG.write("protein set for %s has %d seqs\n"%(homologId, len(proteinSeqDict)))
@@ -588,7 +589,9 @@ if len(proteinAlignments) and not args.deferRaxml:
             raxmlNewickFileName = "RAxML_bipartitions."+fileBase
             filesToMoveToDetailsFolder.append("RAxML_info."+fileBase)
         
+    program_return_value = 1 # return this to signal no tree was generated == failure
     if os.path.exists(raxmlNewickFileName):
+        program_return_value = 0 # means success
         F = open(raxmlNewickFileName)
         originalNewick = F.read()
         F.close()
@@ -831,3 +834,6 @@ LOG.write("finally, will move this file, %s, to %s\n"%(logfileName, detailsDirec
 LOG.close()
 # finally, move the log file into the detailsDirectory
 os.rename(logfileName, os.path.join(detailsDirectory, logfileName))
+
+# return value indicates whether tree was constructed or not
+sys.exit(program_return_value)
