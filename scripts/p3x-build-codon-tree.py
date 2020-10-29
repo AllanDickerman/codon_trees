@@ -298,7 +298,10 @@ protein_alignment_time = time()
 for homologId in singleCopyHomologs:
     geneIdSet = set()
     for genome in homologMatrix[homologId]:
-        geneIdSet.update(set(homologMatrix[homologId][genome]))
+        for proteinId in homologMatrix[homologId][genome]:
+            if not "undefined" in proteinId:
+                geneIdSet.add(proteinId)
+        #geneIdSet.update(set(homologMatrix[homologId][genome]))
     proteinFasta = patric_api.getSequenceOfFeatures(geneIdSet, 'protein')
     proteinSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein))
     for genomeId in homologMatrix[homologId]:
@@ -307,7 +310,16 @@ for homologId in singleCopyHomologs:
                 proteinSeqDict[geneId] = genomeObjectProteins[geneId]
             if geneId in proteinSeqDict:
                 proteinSeqDict[geneId].annotations["genome_id"] = genomeId
-        #proteinSeqRecords.append(proteinSeqDict[proteinId])
+    all_ok = True
+    for feature_id in proteinSeqDict:
+        if "undefined" in feature_id:
+            problem_seq = proteinSeqDict[feature_id] # seqrecord with "undefined" in id
+            comment = "Problem: homology group {} has undefined identfier {}, deleting it\nrecord={}\n".format(homologId, feature_id, problem_seq)
+            LOG.write(comment)
+            sys.stderr.write(comment)
+            all_ok = False
+    if not all_ok:
+        continue # skip this homology group
     if args.debugMode:
         LOG.write("protein set for %s has %d seqs\n"%(homologId, len(proteinSeqDict)))
     if args.aligner == 'muscle':
@@ -358,6 +370,10 @@ for homologId in singleCopyHomologs:
     proteinAlignment = proteinAlignments[homologId]
     if args.debugMode:
         LOG.write("alignment for %s has %d seqs\n"%(homologId, len(proteinAlignment)))
+        LOG.write("   ids: ")
+        for seqrecord in proteinAlignment:
+            LOG.write(", "+seqrecord.id)
+        LOG.write("\n")
     #try:
     #codonAlignment = phylocode.proteinToCodonAlignment(proteinAlignment, genomeObjectGeneDna)
     codonAlignment = phylocode.gapCdsToProteins(proteinAlignment, genomeObjectGeneDna)
