@@ -54,7 +54,7 @@ parser.add_argument("--ignoreAuthRC", action='store_true', help="turn off author
 #parser.add_argument("--enableGenomeGenePgfamFileReuse", action='store_true', help="read genes and homologs from stored file matching genomeIdsFile if it exists")
 if len(sys.argv) == 1:
     parser.print_help()
-    exit(1)
+    sys.exit(1)
 args = parser.parse_args()
 starttime = time()
 genomeIds = set() # list of genome IDs for tree building (enforcing maxGenomesMissing and maxAllowedDupes)
@@ -298,15 +298,28 @@ protein_alignment_time = time()
 for homologId in singleCopyHomologs:
     geneIdSet = set()
     for genome in homologMatrix[homologId]:
-        geneIdSet.update(set(homologMatrix[homologId][genome]))
+        for proteinId in homologMatrix[homologId][genome]:
+            if not "undefined" in proteinId:
+                geneIdSet.add(proteinId)
+        #geneIdSet.update(set(homologMatrix[homologId][genome]))
     proteinFasta = patric_api.getSequenceOfFeatures(geneIdSet, 'protein')
     proteinSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein))
     for genomeId in homologMatrix[homologId]:
         for geneId in homologMatrix[homologId][genomeId]:
             if genomeId == genomeObject_genomeId:
                 proteinSeqDict[geneId] = genomeObjectProteins[geneId]
-            proteinSeqDict[geneId].annotations["genome_id"] = genomeId
-        #proteinSeqRecords.append(proteinSeqDict[proteinId])
+            if geneId in proteinSeqDict:
+                proteinSeqDict[geneId].annotations["genome_id"] = genomeId
+    all_ok = True
+    for feature_id in proteinSeqDict:
+        if "undefined" in feature_id:
+            problem_seq = proteinSeqDict[feature_id] # seqrecord with "undefined" in id
+            comment = "Problem: homology group {} has undefined identfier {}, deleting it\nrecord={}\n".format(homologId, feature_id, problem_seq)
+            LOG.write(comment)
+            sys.stderr.write(comment)
+            all_ok = False
+    if not all_ok:
+        continue # skip this homology group
     if args.debugMode:
         LOG.write("protein set for %s has %d seqs\n"%(homologId, len(proteinSeqDict)))
     if args.aligner == 'muscle':
@@ -357,6 +370,10 @@ for homologId in singleCopyHomologs:
     proteinAlignment = proteinAlignments[homologId]
     if args.debugMode:
         LOG.write("alignment for %s has %d seqs\n"%(homologId, len(proteinAlignment)))
+        LOG.write("   ids: ")
+        for seqrecord in proteinAlignment:
+            LOG.write(", "+seqrecord.id)
+        LOG.write("\n")
     #try:
     #codonAlignment = phylocode.proteinToCodonAlignment(proteinAlignment, genomeObjectGeneDna)
     codonAlignment = phylocode.gapCdsToProteins(proteinAlignment, genomeObjectGeneDna)
@@ -588,7 +605,9 @@ if len(proteinAlignments) and not args.deferRaxml:
             raxmlNewickFileName = "RAxML_bipartitions."+fileBase
             filesToMoveToDetailsFolder.append("RAxML_info."+fileBase)
         
+    program_return_value = 1 # return this to signal no tree was generated == failure
     if os.path.exists(raxmlNewickFileName):
+        program_return_value = 0 # means success
         F = open(raxmlNewickFileName)
         originalNewick = F.read()
         F.close()
@@ -831,3 +850,6 @@ LOG.write("finally, will move this file, %s, to %s\n"%(logfileName, detailsDirec
 LOG.close()
 # finally, move the log file into the detailsDirectory
 os.rename(logfileName, os.path.join(detailsDirectory, logfileName))
+
+# return value indicates whether tree was constructed or not
+sys.exit(program_return_value)

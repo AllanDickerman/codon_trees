@@ -543,8 +543,9 @@ def getGenomeObjectGeneDna(genomeObject):
     retval = {} # dict of SeqRecords
     for feature in genomeObject['features']:
         geneId = feature['id']
-        if geneId not in patricIds:
-            continue
+	# ?? patricIds not defined here. Guessing this was a copy and paste issue. RDO.
+        #if geneId not in patricIds:
+        #    continue
         product = ''
         if 'product' in feature:
             product = feature['function']
