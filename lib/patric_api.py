@@ -513,8 +513,9 @@ def get_homologs_from_genome_object(genomeObject, scope='global'):
     target_family_type = ('PLFAM', 'PGFAM')[scope == 'global'] #test is index into alternatives
     for feature in genomeObject['features']:
         if 'family_assignments' in feature:
-                if familyAssignment[0] == target_family_type:
-                    retval.append((genomeId, feature['id'], familyAssignment[1]))
+            for family_assignment in feature['family_assignments']:
+                if family_assignment[0] == target_family_type:
+                    retval.append((genomeId, feature['id'], family_assignment[1]))
     return retval
 
 def getGenomeObjectProteins(genomeObject):
