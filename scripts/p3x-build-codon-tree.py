@@ -374,21 +374,19 @@ for homologId in singleCopyHomologs:
         for seqrecord in proteinAlignment:
             LOG.write(", "+seqrecord.id)
         LOG.write("\n")
-    #try:
-    #codonAlignment = phylocode.proteinToCodonAlignment(proteinAlignment, genomeObjectGeneDna)
-    codonAlignment = phylocode.gapCdsToProteins(proteinAlignment, genomeObjectGeneDna)
-    if codonAlignment: # if an error happened, we don't do next steps
-        phylocode.relabelSequencesByGenomeId(codonAlignment)
-        if codonAlignment.get_alignment_length() % 3:
-            raise Exception("codon alignment length not multiple of 3 for %s\n"%homologId)
-        if args.endGapTrimThreshold:
-            codonAlignment = phylocode.trimEndGaps(codonAlignment, args.endGapTrimThreshold)
-        codonAlignments[homologId] = codonAlignment
-        if args.debugMode:
-            LOG.write("dna alignment for %s has %d seqs\n"%(homologId, len(codonAlignment)))
-                #SeqIO.write(codonAlignment[homologId][:2], LOG, "fasta")
-    #except Exception as e:
-    #    LOG.write("Exception aligning codons: %s\n"%str(e))
+    try:
+        codonAlignment = phylocode.gapCdsToProteins(proteinAlignment, genomeObjectGeneDna)
+        if codonAlignment: # if an error happened, we don't do next steps
+            phylocode.relabelSequencesByGenomeId(codonAlignment)
+            if codonAlignment.get_alignment_length() % 3:
+                raise Exception("codon alignment length not multiple of 3 for %s\n"%homologId)
+            if args.endGapTrimThreshold:
+                codonAlignment = phylocode.trimEndGaps(codonAlignment, args.endGapTrimThreshold)
+            codonAlignments[homologId] = codonAlignment
+            if args.debugMode:
+                LOG.write("dna alignment for %s has %d seqs\n"%(homologId, len(codonAlignment)))
+    except Exception as e:
+        LOG.write("Exception aligning codons: %s\n"%str(e))
     #    raise(e)
     phylocode.relabelSequencesByGenomeId(proteinAlignment)
     for seqRecord in proteinAlignment:
