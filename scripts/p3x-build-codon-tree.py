@@ -95,7 +95,7 @@ if not args.outputBase:
     args.outputBase = "codontree"
 
 logfileName = os.path.basename(sys.argv[0])
-logfileName = re.sub("\..*", "", logfileName)
+logfileName = re.sub(r"\..*", "", logfileName)
 logfileName += ".log"
 logfileName = os.path.join(args.outputDirectory, logfileName)
 
@@ -239,7 +239,7 @@ if len(genomesWithoutData):
 
 if args.writePgfamMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".homologMatrix.txt"), 'w') as F:
-       patric_api.write_homolog_gene_matrix(homologMatrix, F)
+        patric_api.write_homolog_gene_matrix(homologMatrix, F)
 
 genesPerGenome = {}
 for genome in genomeIds:
@@ -447,8 +447,6 @@ if len(proteinAlignments):
                 F.write("\n")
             else:
                 F.write(homologId+"\nNo codon alignment\n")
-        else:
-            F.write(homologId+"\tNo protein alignment\n")
         F.write("\n")
     F.close()
 
@@ -516,7 +514,7 @@ if len(proteinAlignments):
             F = open("RAxML_info."+proteinFileBase)
             bestModel = None
             for line in F:
-                m = re.match("\s+Partition: 0 best-scoring AA model:\s+(\S+)", line)
+                m = re.match(r"\s+Partition: 0 best-scoring AA model:\s+(\S+)", line)
                 if m:
                     bestModel = m.group(1)
             if bestModel:
@@ -712,14 +710,14 @@ if os.path.exists(raxmlInfoFile):
     filesToMoveToDetailsFolder.append(raxmlInfoFile)
     try:
         raxmlInfo = open(raxmlInfoFile).read()
-        m = re.search("Final.*core of best tree ([-\d\.]+)", raxmlInfo)
+        m = re.search(r"Final.*core of best tree ([-\d\.]+)", raxmlInfo)
         if not m:
-            m = re.search("Final ML Optimization Likelihood: ([-\d\.]+)", raxmlInfo)
+            m = re.search(r"Final ML Optimization Likelihood: ([-\d\.]+)", raxmlInfo)
         if m:
             raxmlLikelihood = m.group(1) 
             raxmlLikelihood = float(raxmlLikelihood)
             HTML.write("<tr><td><b>%s</b></td><td>%.4f</td></tr>\n"%("RAxML likelihood", raxmlLikelihood))
-        m = re.search("RAxML version ([\d\.]+)", raxmlInfo)
+        m = re.search(r"RAxML version ([\d\.]+)", raxmlInfo)
         if m:  
             raxmlVersion = m.group(1)
             HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML version", raxmlVersion))
