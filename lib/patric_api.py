@@ -1,11 +1,10 @@
 import os
 import sys
-import re
 import requests
 import urllib
-import json
+import copy
+import time
 from Bio.Alphabet import IUPAC
-from Bio import Alphabet
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -31,9 +30,9 @@ def authenticateByFile(tokenFile=None):
             authenticateByString(tokenString)
 
 def authenticateByEnv():
-    if os.environ.has_key("KB_AUTH_TOKEN"):
+    if "KB_AUTH_TOKEN" in os.environ:
         LOG.write("reading auth key from environment\n")
-        authenticateByString(os.environ.get('KB_AUTH_TOKEN'))
+        authenticateByString(os.environ['KB_AUTH_TOKEN'])
 
 def authenticateByString(tokenString):
     Session.headers.update({ 'Authorization' : tokenString })
@@ -124,9 +123,10 @@ def getDataForGenomes(genomeIdSet, fieldNames):
     if Debug:
         LOG.write("getDataForGenomes:\nurl="+response.url+"\nquery="+query+"\n")
     if not response.ok:
-        LOG.write("Error code %d returned by %s in getDataForGenomes\n"%(response.status_code, response.url))
+        errorMessage = "Error code %d returned by %s in getDataForGenomes\n"%(response.status_code, response.url)
+        LOG.write(errorMessage)
         LOG.write("length of query was %d\n"%len(query))
-        LOG.write("url="+req.url+"\nquery="+query+"\n")
+        LOG.write("url="+response.url+"\nquery="+query+"\n")
         raise Exception(errorMessage)
     data = response.text.replace('"','') #get rid of quotes
     rows = data.split("\n")[:-1] # leave off empty last element
@@ -144,18 +144,26 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
     start = 0
     retval = ""
     feature_ids = list(feature_ids) # so we can index over them
+    max_tries = 10
     while start < len(feature_ids):
         end = start + max_per_query
         end = min(end, len(feature_ids))
         #query="in(patric_id,("+",".join(map(urllib.quote, feature_ids[start:end]))+"))"
         query="in(patric_id,("+",".join(feature_ids[start:end])+"))"
         query += "&limit(%d)"%len(feature_ids)
+        if Debug:
+            sys.stderr.write("getSequenceOfFeatures: {}\n".format(query))
+        
         response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/%s+fasta'%seq_type}, verify= not Debug)
         if not response.ok:
-            errorMessage= "Error code %d returned by %s in getSequenceOfFeatures\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
+            max_tries -= 1
+            errorMessage= "Error code %d returned by %s in getSequenceOfFeatures\nnumber of tries left = %d\n"%(response.status_code, Base_url, len(query))
             LOG.write(errorMessage)
             LOG.flush()
-            raise Exception(errorMessage)
+            if max_tries <= 0:
+                raise Exception(errorMessage)
+            time.sleep(10)
+            continue
         for line in response.text.split("\n"):
             if line.startswith(">"):
                 parts = line.split("|")
@@ -163,54 +171,8 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
                     line = "|".join(parts[:2])
             retval += line+"\n"
         start += max_per_query
+        max_tries = 10
     return retval
-
-"""
-def getProteinFastaForPatricIds(feature_ids):
-    max_per_query=100
-    start = 0
-    retval = ""
-    while start < len(patricIds):
-        end = start + max_per_query
-        end = min(end, len(patricIds))
-        query="in(patric_id,("+",".join(map(urllib.quote, patricIds[start:end]))+"))"
-        query += "&limit(%d)"%len(patricIds)
-        response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/protein+fasta'})
-        if not response.ok:
-            LOG.write("Error code %d returned by %s in getProteinFastaForPatricIds\n"%(response.status_code, Base_url))
-            errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
-            LOG.write(errorMessage)
-            LOG.flush()
-            raise Exception(errorMessage)
-        for line in response.text.split("\n"):
-            if line.startswith(">"):
-                parts = line.split("|")
-                if len(parts) > 2:
-                    line = "|".join(parts[:2])
-            retval += line+"\n"
-    return retval
-
-def getDnaFastaForPatricIds(patricIds):
-    query="in(patric_id,("+",".join(map(urllib.quote, patricIds))+"))"
-    query += "&limit(%d)"%len(patricIds)
-    response=Session.get(Base_url+"genome_feature/", params=query, headers={'Accept': 'application/dna+fasta'})
-    if False and Debug:
-        LOG.write("getDnaFastaForByPatricIds:\nurl="+response.url+"\nquery="+query+"\n")
-    if not response.ok:
-        LOG.write("Error code %d returned by %s in getDnaFastaForPatricIds\n"%(response.status_code, Base_url))
-        errorMessage= "Error code %d returned by %s in getGenomeFeaturesByPatricIds\nlength of query was %d\n"%(response.status_code, Base_url, len(query))
-        LOG.write(errorMessage)
-        LOG.flush()
-        raise Exception(errorMessage)
-    idsFixedFasta=""
-    for line in response.text.split("\n"):
-        if line.startswith(">"):
-            parts = line.split("|")
-            if len(parts) > 2:
-                line = "|".join(parts[:2])
-        idsFixedFasta += line+"\n"
-    return idsFixedFasta
-"""
 
 def getProteinsFastaForGenomeId(genomeId):
     query="in(genome_id,("+genomeId+"))"
@@ -264,11 +226,10 @@ def getProductsForPgfamsByN(pgfams, n=5):
         i += n
     return retval
 
-def getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile):
+def getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile, scope='global'):
     """ Get the list of genes, with PGFam IDs, for universal roles for the specified genomes """
     if Debug:
         LOG.write("patric_api.getGenesForUniversalRolesForGenomeSet() called with %d genomes and roles file %s\n"%(len(genomeIdSet), universalRolesFile))
-    retval = []
     universalRoles = set()
     if os.path.exists(universalRolesFile):
         with open(universalRolesFile) as F:
@@ -281,34 +242,36 @@ def getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile):
     roleBatchSize = 10
     genomeIndex = 0
     roleList = list(universalRoles)
-    #while genomeIndex < len(genomeIds):
-    if True:
-        #gids = genomeIds[genomeIndex:genomeIndex+genomeBatchSize]
-        gids = [genomeIds]
-        roleIndex = 0
-        #while roleIndex < len(universalRoles):
-        roles = roleList[roleIndex:roleIndex+roleBatchSize]
-        query = "in(genome_id,(%s))"%",".join(gids) #, "in(product,(%s))"%",".join(roles))
-        query += "&select(genome_id,patric_id,pgfam_id,product)"
-        query += "&limit(25000)"
-        response = Session.get(Base_url+"genome_feature/", params=query) #, 
+    retval = []
+    #gids = genomeIds[genomeIndex:genomeIndex+genomeBatchSize]
+    gids = [genomeIds]
+    roleIndex = 0
+    familyType = 'pgfam_id'
+    if scope == 'local':
+        familyType = 'plfam_id'
+    #while roleIndex < len(universalRoles):
+    roles = roleList[roleIndex:roleIndex+roleBatchSize]
+    query = "in(genome_id,(%s))"%",".join(gids) #, "in(product,(%s))"%",".join(roles))
+    query += "&select(genome_id,patric_id,{},product)".format(familyType)
+    query += "&limit(25000)"
+    response = Session.get(Base_url+"genome_feature/", params=query) #, 
+    if Debug:
+        LOG.write("query= %s\n"%response.url)
+    for line in response.text.split("\n"):
+        line = line.replace('"','')
         if Debug:
-            LOG.write("query= %s\n"%response.url)
-        for line in response.text.split("\n"):
-            line = line.replace('"','')
-            if Debug:
-                LOG.write("row= "+line+"\n")
-            row = line.split("\t")
-            if len(row) != 4:
-                continue
-            if not row[2].startswith("PGF"):
-                continue
-            if not row[3] in roles: # check to be sure product matches at least one intended product
-                LOG.write("role not in uniRoles: %s\n"%row[3])
-                continue
-            retval.append(row)
-            roleIndex += roleBatchSize
-        genomeIndex += genomeBatchSize
+            LOG.write("row= "+line+"\n")
+        row = line.split("\t")
+        if len(row) != 4:
+            continue
+        if not row[2].startswith("PGF"):
+            continue
+        if not row[3] in roles: # check to be sure product matches at least one intended product
+            LOG.write("role not in uniRoles: %s\n"%row[3])
+            continue
+        retval.append(row)
+        roleIndex += roleBatchSize
+    return retval
 
 def getPatricGenePosForGenome(genomeId):
     if Debug:
