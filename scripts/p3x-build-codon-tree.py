@@ -302,8 +302,10 @@ for homologId in singleCopyHomologs:
             if not "undefined" in proteinId:
                 geneIdSet.add(proteinId)
         #geneIdSet.update(set(homologMatrix[homologId][genome]))
+
     proteinFasta = patric_api.getSequenceOfFeatures(geneIdSet, 'protein')
-    proteinSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein))
+    seqRecords = SeqIO.parse(StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein)
+
     for genomeId in homologMatrix[homologId]:
         for geneId in homologMatrix[homologId][genomeId]:
             if genomeId == genomeObject_genomeId:

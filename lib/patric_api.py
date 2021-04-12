@@ -145,6 +145,7 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
     retval = ""
     feature_ids = list(feature_ids) # so we can index over them
     max_tries = 10
+    output_ids = set() # to exclude duplicate IDs in output (can happen with 'undefined')
     while start < len(feature_ids):
         end = start + max_per_query
         end = min(end, len(feature_ids))
@@ -164,12 +165,20 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
                 raise Exception(errorMessage)
             time.sleep(10)
             continue
+        seqId = None
         for line in response.text.split("\n"):
             if line.startswith(">"):
+                seqId = line[1:].split(" ", 1)[0] # space delimited
                 parts = line.split("|")
                 if len(parts) > 2:
-                    line = "|".join(parts[:2])
-            retval += line+"\n"
+                    seqId = "|".join(parts[:2])
+                if seqId in output_ids:
+                    LOG.write("duplicate ID in getSequenceOfFeatures: {}\n".format(seqId))
+                    seqId = None # invalidate a duplicated ID
+                output_ids.add(seqId)
+                line = ">"+seqId
+            if seqId:
+                retval += line+"\n"
         start += max_per_query
         max_tries = 10
     return retval
