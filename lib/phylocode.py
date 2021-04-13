@@ -1,23 +1,24 @@
 import sys
 import re
 import subprocess
+import os
 import os.path
 import patric_api
-from Bio import BiopythonWarning
+#from Bio import BiopythonWarning
 from Bio.Alphabet import IUPAC
 from Bio import AlignIO
 from Bio import SeqIO
-from Bio import Alphabet
+#from Bio import Alphabet
 from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
-from Bio.Align import MultipleSeqAlignment
-from Bio.Data import CodonTable
+#from Bio.SeqRecord import SeqRecord
+#from Bio.Align import MultipleSeqAlignment
+#from Bio.Data import CodonTable
 from Bio import BiopythonExperimentalWarning
 import warnings
 with warnings.catch_warnings():
     warnings.simplefilter('ignore', BiopythonExperimentalWarning)
     from Bio import codonalign
-from collections import defaultdict
+#from collections import defaultdict
 try:
     from StringIO import StringIO ## for Python 2
 except ImportError:
@@ -29,7 +30,6 @@ LOG = sys.stderr
 def which(program):
     """ Can use to test for existence of needed files on path
     based on code from https://stackoverflow.com/users/20840/jay """
-    import os
     def is_exe(fpath):
         return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
 
@@ -66,7 +66,6 @@ def selectSingleCopyHomologs(pgfamMatrix, genomeIdList, requiredGenome=None, max
     # given a genome-gene-pgfam matrix
     # find the set of pgfam_ids which satisfy the maxGenomesMissing & maxAllowedDups criteria for specified genomes
     pgfamScore = {}
-    scPgfamsIfGenomeOmitted = {}
     if not len(genomeIdList) > 3:
         raise Exception("getSingleCopyPgfams: number of genome IDs too low: %d"%len(genomeIdList))
     minGenomesPresent = len(genomeIdList) - maxGenomesMissing
@@ -191,9 +190,9 @@ def generateNexusFile(newick, outfileBase, nexus_template = None, align_tips = "
     figtreeParams={}
     if not nexus_template:
         LOG.write("Look for figtree.nex template in sys.path directories\n")
-        for dirname in sys.path: # should be in .../codon_trees/lib
+        for dirname in sys.path: # should be in ../lib
             if os.path.isfile(os.path.join(dirname, "figtree.nex")):
-                nexus_template_file = os.path.join(dirname, "figtree.nex")
+                nexus_template = os.path.join(dirname, "figtree.nex")
                 LOG.write("Found figtree template file: %s\n"%nexus_template)
     # read a model figtree nexus file
     if nexus_template and os.path.exists(nexus_template):
@@ -233,7 +232,7 @@ def generateFigtreeImage(nexusFile, numTaxa=0, figtreeJar=None, imageFormat="PDF
     imageFileName = nexusFile
     imageFileName = nexusFile.replace(".nex", ".")
     imageFileName += imageFormat.lower()
-    if figtreeJar:
+    if figtreeJar and os.path.exists(figtreeJar):
         figtreeCommand = ['java',  '-jar', figtreeJar, '-graphic', imageFormat]
     else:
         # assume a figtree executable is on the path
@@ -271,8 +270,14 @@ def alignSeqRecordsMuscle(seqRecords):
     for s in seqRecords:
         alphabet=s.seq.alphabet
         break
-    alignment = AlignIO.read(muscleProcess.stdout, "fasta", alphabet=alphabet)
-    alignment.sort()
+    try:
+        alignment = AlignIO.read(muscleProcess.stdout, "fasta", alphabet=alphabet)
+        alignment.sort()
+    except ValueError as ve:
+        alignment = None
+        comment = "Error in muscle alignment: {}\n".format(ve)
+        sys.stderr.write(comment)
+        LOG.write(comment)
     return(alignment)
 
 def alignSeqRecordsMafft(seqRecords):
@@ -283,8 +288,15 @@ def alignSeqRecordsMafft(seqRecords):
     for s in seqRecords:
         alphabet=s.seq.alphabet
         break # only need first one
-    alignment = AlignIO.read(mafftProcess.stdout, "fasta", alphabet=alphabet)
-    alignment.sort()
+    alignment = None
+    try:
+        alignment = AlignIO.read(mafftProcess.stdout, "fasta", alphabet=alphabet)
+        alignment.sort()
+    except ValueError as ve:
+        alignment = None
+        comment = "Error in mafft alignment: {}\n".format(ve)
+        sys.stderr.write(comment)
+        LOG.write(comment)
     return(alignment)
 
 def calcAlignmentStats(alignment):
@@ -342,8 +354,8 @@ def calcSumAlignmentDistance(alignment, querySeq):
     sumDist = 0
     for record in alignment:
         for posPair in zip(querySeq, record.seq):
-          if not posPair[0] == posPair[1]:
-            sumDist += 1
+            if not posPair[0] == posPair[1]:
+                sumDist += 1
         #sumDist += Levenshtein.distance(str(querySeq), str(record.seq))
     return(sumDist)
 
@@ -464,7 +476,6 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
                 LOG.write("appending extra DNA seq %s\n"%seqId)
     if set(dnaSeqDict.keys()) != set(protSeqDict.keys()):
         raise Exception("Protein and DNA sets differ:\nProteins: %s\nDNA: %s\n"%(", ".join(sorted(protSeqDict)), ", ".join(sorted(dnaSeqDict))))
-    allGood = True
     dnaAlignFasta = StringIO()
     prot_align_len = proteinAlignment.get_alignment_length()
     for seqId in dnaSeqDict:
@@ -479,7 +490,7 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
             if protSeq[protPos] == '-':
                 codon = '---'
             else:
-                """ could in future use a codon table to check for matching """
+                #  TODO: in future use a codon table to check correct matching 
                 codon = str(dnaSeq[dnaSeqPos:dnaSeqPos+3])
                 dnaSeqPos += 3
             dnaAlignFasta.write(codon)
@@ -510,10 +521,8 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
                 LOG.write("appending extra DNA seq %s\n"%seqId)
     if set(dnaSeqDict.keys()) != set(protSeqDict.keys()):
         raise Exception("Protein and DNA sets differ:\nProteins: %s\nDNA: %s\n"%(", ".join(sorted(protSeqDict)), ", ".join(sorted(dnaSeqDict))))
-    allGood = True
     for seqId in dnaSeqDict:
         if not len(dnaSeqDict[seqId].seq):
-            allGood = False
             #del(dnaSeqDict[seqId])
             LOG.write("warning: seqId %s length of dna was zero\n"%seqId)
     dnaSeqRecords=[]
@@ -564,6 +573,8 @@ def relabelSequencesByGenomeId(seqRecordSet):
     #rename sequences by genome instead of sequence Id
     for seqRecord in seqRecordSet:
         originalId = seqRecord.id
+        if originalId.startswith(">"):
+            orignalId = originalId[1:]
         genomeId = ".".join(seqRecord.id.split(".")[:2]).split("|")[1]
         seqRecord.id = genomeId
         #stash original ID in the annotations dictionary of the seqRecord
@@ -581,8 +592,8 @@ def trimAlignments(alignmentDict, endGapTrimThreshold=0.5):
 def writeOneAlignmentPhylip(alignment, destination, idList, outputIds=True):
     nameFieldWidth = 10
     if outputIds:
-        for id in idList:
-            nameFieldWidth = max(nameFieldWidth, len(id))
+        for seqid in idList:
+            nameFieldWidth = max(nameFieldWidth, len(seqid))
     theseIds = set(rec.id for rec in alignment)
     if len(theseIds) < len(idList):
         #nullSeq = UnknownSeq(alignment.get_alignment_length(), alphabet=alignment._alphabet)
@@ -590,11 +601,11 @@ def writeOneAlignmentPhylip(alignment, destination, idList, outputIds=True):
     seqDict = {}
     for record in alignment:
         seqDict[record.id] = record.seq
-    for id in idList:
+    for seqid in idList:
         if outputIds:
-            destination.write("{:{width}}  ".format(id, width = nameFieldWidth))
-        if id in theseIds:
-            destination.write(str(seqDict[id])+"\n")
+            destination.write("{:{width}}  ".format(seqid, width = nameFieldWidth))
+        if seqid in theseIds:
+            destination.write(str(seqDict[seqid])+"\n")
         else:
             destination.write(str(nullSeq)+"\n")
 
