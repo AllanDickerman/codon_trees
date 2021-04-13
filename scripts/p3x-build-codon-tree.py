@@ -126,8 +126,8 @@ def authenticate():
         tokenFile = os.path.join(os.environ.get('HOME'), ".patric_token")
         if os.path.exists(tokenFile):
             LOG.write("reading auth key from file %s\n"%tokenFile)
-            with open(tokenFile) as F:
-                tokenString = F.read().rstrip()
+            with open(tokenFile) as T:
+                tokenString = T.read().rstrip()
                 patric_api.authenticateByString(tokenString)
         elif args.debugMode:
             LOG.write("authorization file %s not found\n"%tokenFile)
@@ -296,6 +296,7 @@ alignmentScore = {}
 alignedTaxa=set()
 protein_alignment_time = time()
 for homologId in singleCopyHomologs:
+    LOG.write("aligning {}\n".format(homologId))
     geneIdSet = set()
     for genome in homologMatrix[homologId]:
         for proteinId in homologMatrix[homologId][genome]:
@@ -305,6 +306,7 @@ for homologId in singleCopyHomologs:
 
     proteinFasta = patric_api.getSequenceOfFeatures(geneIdSet, 'protein')
     seqRecords = SeqIO.parse(StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein)
+    proteinSeqDict = SeqIO.to_dict(seqRecords)
 
     for genomeId in homologMatrix[homologId]:
         for geneId in homologMatrix[homologId][genomeId]:
@@ -412,7 +414,8 @@ os.chdir(args.outputDirectory)
 proteinPositions=0
 codonPositions = 0
 
-raxmlCommand=''
+raxmlCommand = []
+partitionFile = ''
 if len(proteinAlignments):
 # write the genes included in each homology group (and those paralogs excluded)
     homologsAndGenesIncludedInAlignmentFile = phyloFileBase+".homologsAndGenesIncludedInAlignment.txt"
@@ -495,7 +498,6 @@ if len(proteinAlignments):
         # analyze just protein data with model AUTO, parse output to find best protein model
         # use output tree as starting tree to save time
         LOG.write("running raxml on proteins with model = 'AUTO' to find best model for proteins.\n")
-        raxml_analysis_goal.append("Analyze proteins with model 'AUTO' to find best substitution model.")
         proteinFileBase = phyloFileBase+"_proteins"
         proteinAlignmentFile = proteinFileBase+".phy"
         phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, proteinAlignmentFile)
@@ -503,6 +505,7 @@ if len(proteinAlignments):
         raxmlCommand = [args.raxmlExecutable, "-s", proteinAlignmentFile, "-n", proteinFileBase, "-m", prot_auto_model, "-p", "12345", "-T", str(args.threads), '-e', '10']
         LOG.write("command = "+" ".join(raxmlCommand)+"\n")
         raxml_command_lines.append(" ".join(raxmlCommand))
+        raxml_analysis_goal.append("Analyze proteins with model 'AUTO' to find best substitution model.")
         proc_start_time = time()
         return_code = subprocess.call(raxmlCommand, stdout=LOG, stderr=LOG)
         raxml_process_time.append(time() - proc_start_time)
@@ -525,7 +528,7 @@ if len(proteinAlignments):
             startTree = "RAxML_bestTree."+proteinFileBase
         else:
             LOG.write("Could not find output from running raxml on proteins alone. Cannot specify best protein model. Defaulting to '{}'\n".format(protein_substitution_model))
-    eaxmlCommand=[]
+    raxmlCommand=[]
     if args.analyzeProteins and args.analyzeCodons:
         alignmentFile = phyloFileBase+".phy"
         filesToMoveToDetailsFolder.append(alignmentFile)
@@ -566,9 +569,11 @@ if len(proteinAlignments):
         F.write(" ".join(raxmlCommand)+"\n")
     filesToMoveToDetailsFolder.append(raxmlCommandFile)
     raxml_command_lines.append(" ".join(raxmlCommand))
+    raxml_analysis_goal.append("Find best tree.")
 
 genomeIdToName = patric_api.getNamesForGenomeIdsByN(allGenomeIds)
 svgTreeImage = None
+program_return_value = 0 
 if len(proteinAlignments) and not args.deferRaxml:
     goal = "Find best tree."
     if args.bootstrapReps > 0:
@@ -591,10 +596,10 @@ if len(proteinAlignments) and not args.deferRaxml:
     if args.bootstrapReps > 0:
         raxmlNewickFileName = "RAxML_bipartitions."+phyloFileBase
     elif os.path.exists("RAxML_rellBootstrap."+phyloFileBase):
-        raxml_analysis_goal.append("Map RELL support values onto best tree.")
         fileBase = "tree_with_rell_support"
         raxmlCommand = [args.raxmlExecutable, "-s", alignmentFile, "-n", fileBase, "-m",  "GTRCAT", "-f", "b", "-t", "RAxML_bestTree."+phyloFileBase, "-z", "RAxML_rellBootstrap."+phyloFileBase]
         raxml_command_lines.append(" ".join(raxmlCommand))
+        raxml_analysis_goal.append("Map RELL support values onto best tree.")
         proc_start_time = time()
         result_code = subprocess.call(raxmlCommand, shell=False, stdout=LOG, stderr=LOG)
         raxml_process_time.append(time() - proc_start_time)
@@ -725,7 +730,7 @@ if os.path.exists(raxmlInfoFile):
             HTML.write("<tr><td><b>%s</b></td><td>%s</td></tr>\n"%("RAxML version", raxmlVersion))
         for m in re.finditer("IMPORTANT WARNING: (Sequences.*?identical)", raxmlInfo):
             raxmlWarnings.append(m.group(1))
-        m = re.search("Overall execution time.*: ([\d\.]*) secs", raxmlInfo) 
+        m = re.search(r"Overall execution time.*: ([\d\.]*) secs", raxmlInfo) 
     except Exception as e:
         LOG.write("Exception parsing %s: %s\n"%(raxmlInfoFile, str(e))) 
 raxmlDuration = 0 
@@ -737,9 +742,11 @@ HTML.write("</table>\n\n")
 if raxml_command_lines and len(raxml_command_lines):
     HTML.write("<h2>RAxML Command Line</h2>")
     for i, line in enumerate(raxml_command_lines):
-        HTML.write("<p>Goal: "+raxml_analysis_goal[i]+"<br>\n")
+        if i < len(raxml_analysis_goal):
+            HTML.write("<p>Goal: "+raxml_analysis_goal[i]+"<br>\n")
         HTML.write(line+"<br>\n")
-        HTML.write("Process time: {:.3f} seconds<br>\n".format(raxml_process_time[i]))
+        if i < len(raxml_process_time):
+            HTML.write("Process time: {:.3f} seconds<br>\n".format(raxml_process_time[i]))
 else:
     HTML.write("<h2>RAxML Not Run</h2>\n")
 

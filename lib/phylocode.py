@@ -232,7 +232,7 @@ def generateFigtreeImage(nexusFile, numTaxa=0, figtreeJar=None, imageFormat="PDF
     imageFileName = nexusFile
     imageFileName = nexusFile.replace(".nex", ".")
     imageFileName += imageFormat.lower()
-    if figtreeJar:
+    if figtreeJar and os.path.exists(figtreeJar):
         figtreeCommand = ['java',  '-jar', figtreeJar, '-graphic', imageFormat]
     else:
         # assume a figtree executable is on the path
@@ -573,6 +573,8 @@ def relabelSequencesByGenomeId(seqRecordSet):
     #rename sequences by genome instead of sequence Id
     for seqRecord in seqRecordSet:
         originalId = seqRecord.id
+        if originalId.startswith(">"):
+            orignalId = originalId[1:]
         genomeId = ".".join(seqRecord.id.split(".")[:2]).split("|")[1]
         seqRecord.id = genomeId
         #stash original ID in the annotations dictionary of the seqRecord

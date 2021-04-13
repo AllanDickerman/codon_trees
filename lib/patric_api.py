@@ -168,15 +168,16 @@ def getSequenceOfFeatures(feature_ids, seq_type='dna'):
         seqId = None
         for line in response.text.split("\n"):
             if line.startswith(">"):
-                seqId = line[1:].split(" ", 1)[0] # space delimited
+                seqId = line.split(" ", 1)[0] # space delimited
                 parts = line.split("|")
                 if len(parts) > 2:
                     seqId = "|".join(parts[:2])
                 if seqId in output_ids:
                     LOG.write("duplicate ID in getSequenceOfFeatures: {}\n".format(seqId))
                     seqId = None # invalidate a duplicated ID
-                output_ids.add(seqId)
-                line = ">"+seqId
+                else:
+                    output_ids.add(seqId)
+                    line = seqId
             if seqId:
                 retval += line+"\n"
         start += max_per_query
