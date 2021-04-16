@@ -296,47 +296,50 @@ alignmentScore = {}
 alignedTaxa=set()
 protein_alignment_time = time()
 for homologId in singleCopyHomologs:
-    LOG.write("aligning {}\n".format(homologId))
-    geneIdSet = set()
-    for genome in homologMatrix[homologId]:
-        for proteinId in homologMatrix[homologId][genome]:
-            if not "undefined" in proteinId:
-                geneIdSet.add(proteinId)
-        #geneIdSet.update(set(homologMatrix[homologId][genome]))
+    try:
+        LOG.write("aligning {}\n".format(homologId))
+        geneIdSet = set()
+        for genome in homologMatrix[homologId]:
+            for proteinId in homologMatrix[homologId][genome]:
+                if not "undefined" in proteinId:
+                    geneIdSet.add(proteinId)
+            #geneIdSet.update(set(homologMatrix[homologId][genome]))
 
-    proteinFasta = patric_api.getSequenceOfFeatures(geneIdSet, 'protein')
-    seqRecords = SeqIO.parse(StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein)
-    proteinSeqDict = SeqIO.to_dict(seqRecords)
+        proteinFasta = patric_api.getSequenceOfFeatures(geneIdSet, 'protein')
+        seqRecords = SeqIO.parse(StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein)
+        proteinSeqDict = SeqIO.to_dict(seqRecords)
 
-    for genomeId in homologMatrix[homologId]:
-        for geneId in homologMatrix[homologId][genomeId]:
-            if genomeId == genomeObject_genomeId:
-                proteinSeqDict[geneId] = genomeObjectProteins[geneId]
-            if geneId in proteinSeqDict:
-                proteinSeqDict[geneId].annotations["genome_id"] = genomeId
-    all_ok = True
-    for feature_id in proteinSeqDict:
-        if "undefined" in feature_id:
-            problem_seq = proteinSeqDict[feature_id] # seqrecord with "undefined" in id
-            comment = "Problem: homology group {} has undefined identfier {}, deleting it\nrecord={}\n".format(homologId, feature_id, problem_seq)
-            LOG.write(comment)
-            sys.stderr.write(comment)
-            all_ok = False
-    if not all_ok:
-        continue # skip this homology group
-    if args.debugMode:
-        LOG.write("protein set for %s has %d seqs\n"%(homologId, len(proteinSeqDict)))
-    if args.aligner == 'muscle':
-        proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqDict.values())
-    else:
-        proteinAlignment = phylocode.alignSeqRecordsMafft(proteinSeqDict.values())
-    proteinAlignment = phylocode.resolveDuplicatesPerPatricGenome(proteinAlignment)
-    proteinAlignment.sort()
-    proteinAlignments[homologId] = proteinAlignment
-    alignmentStats = phylocode.calcAlignmentStats(proteinAlignment)
-    # dividing by sqrt(alignment length) yields result intermediate between sum_squared_freq and mean_squared_freq (where squared_freq is the within-column sum of squared state (letter, amino acid) frequency
-    alignmentScore[homologId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
-    proteinAlignmentStats[homologId] = alignmentStats
+        for genomeId in homologMatrix[homologId]:
+            for geneId in homologMatrix[homologId][genomeId]:
+                if genomeId == genomeObject_genomeId:
+                    proteinSeqDict[geneId] = genomeObjectProteins[geneId]
+                if geneId in proteinSeqDict:
+                    proteinSeqDict[geneId].annotations["genome_id"] = genomeId
+        all_ok = True
+        for feature_id in proteinSeqDict:
+            if "undefined" in feature_id:
+                problem_seq = proteinSeqDict[feature_id] # seqrecord with "undefined" in id
+                comment = "Problem: homology group {} has undefined identfier {}, deleting it\nrecord={}\n".format(homologId, feature_id, problem_seq)
+                LOG.write(comment)
+                sys.stderr.write(comment)
+                all_ok = False
+        if not all_ok:
+            continue # skip this homology group
+        if args.debugMode:
+            LOG.write("protein set for %s has %d seqs\n"%(homologId, len(proteinSeqDict)))
+        if args.aligner == 'muscle':
+            proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqDict.values())
+        else:
+            proteinAlignment = phylocode.alignSeqRecordsMafft(proteinSeqDict.values())
+        proteinAlignment = phylocode.resolveDuplicatesPerPatricGenome(proteinAlignment)
+        proteinAlignment.sort()
+        proteinAlignments[homologId] = proteinAlignment
+        alignmentStats = phylocode.calcAlignmentStats(proteinAlignment)
+        # dividing by sqrt(alignment length) yields result intermediate between sum_squared_freq and mean_squared_freq (where squared_freq is the within-column sum of squared state (letter, amino acid) frequency
+        alignmentScore[homologId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
+        proteinAlignmentStats[homologId] = alignmentStats
+    except Exception as e:
+        LOG.write("exception in processing homology group {}: {}\nskipping\n".format(homologyId, e))
 
 protein_alignment_time = time() - protein_alignment_time
 LOG.write("Protein alignments completed. Number = %d, time = %.1f\n"%(len(proteinAlignments), protein_alignment_time))
@@ -413,6 +416,7 @@ os.chdir(args.outputDirectory)
 
 proteinPositions=0
 codonPositions = 0
+protein_substitution_model = args.proteinModel
 
 raxmlCommand = []
 partitionFile = ''
@@ -493,7 +497,6 @@ if len(proteinAlignments):
     raxml_process_time = []
 # finally, output concatenated protein and/or DNA alignment and partitions and raxml command to appropriate files
     startTree = None
-    protein_substitution_model = args.proteinModel
     if args.analyzeProteins and args.proteinModel == "AUTO":
         # analyze just protein data with model AUTO, parse output to find best protein model
         # use output tree as starting tree to save time
