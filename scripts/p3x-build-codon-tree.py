@@ -339,7 +339,7 @@ for homologId in singleCopyHomologs:
         alignmentScore[homologId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
         proteinAlignmentStats[homologId] = alignmentStats
     except Exception as e:
-        LOG.write("exception in processing homology group {}: {}\nskipping\n".format(homologyId, e))
+        LOG.write("exception in processing homology group {}: {}\nskipping\n".format(homologId, e))
 
 protein_alignment_time = time() - protein_alignment_time
 LOG.write("Protein alignments completed. Number = %d, time = %.1f\n"%(len(proteinAlignments), protein_alignment_time))
