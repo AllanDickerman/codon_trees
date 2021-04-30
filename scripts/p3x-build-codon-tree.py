@@ -331,6 +331,8 @@ for homologId in singleCopyHomologs:
             proteinAlignment = phylocode.alignSeqRecordsMuscle(proteinSeqDict.values())
         else:
             proteinAlignment = phylocode.alignSeqRecordsMafft(proteinSeqDict.values())
+        if not proteinAlignment:
+            continue
         proteinAlignment = phylocode.resolveDuplicatesPerPatricGenome(proteinAlignment)
         proteinAlignment.sort()
         proteinAlignments[homologId] = proteinAlignment
