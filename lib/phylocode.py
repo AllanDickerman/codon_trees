@@ -419,6 +419,8 @@ def resolveDuplicatesPerPatricGenome(alignment):
 # calculate average similarity/distance of each seqToResolve to entire alignment
 # identify best seq per genome (highest avg similarity to rest of alignment) and save that one, remove others from seqIds list
 # return list of seqIds to keep
+    if not alignment:
+        return None
     seqIds=list()
     genomesToResolve=set()
     seqsPerGenome = {}
