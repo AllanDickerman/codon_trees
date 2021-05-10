@@ -301,9 +301,11 @@ def alignSeqRecordsMafft(seqRecords):
 
 def calcAlignmentStats(alignment):
     # analyze a BioPython MultipleSeqAlignment object to describe conservation levels
-    stats = {}
+    stats = {'num_pos':0, 'num_seqs':0, 'sum_squared_freq':0, 'mean_squared_freq':0, 'gaps':0, 'prop_gaps':0}
     stats['num_pos'] = alignment.get_alignment_length()
     stats['num_seqs'] = len(alignment)
+    if stats['num_pos'] == 0 or stats['num_seqs'] == 0: 
+        return stats
     numGaps = 0
     numNonGaps = 0
     sumSquaredFreq = 0
@@ -417,6 +419,8 @@ def resolveDuplicatesPerPatricGenome(alignment):
 # calculate average similarity/distance of each seqToResolve to entire alignment
 # identify best seq per genome (highest avg similarity to rest of alignment) and save that one, remove others from seqIds list
 # return list of seqIds to keep
+    if not alignment:
+        return None
     seqIds=list()
     genomesToResolve=set()
     seqsPerGenome = {}
