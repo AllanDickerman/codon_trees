@@ -306,6 +306,13 @@ for homologId in singleCopyHomologs:
             #geneIdSet.update(set(homologMatrix[homologId][genome]))
 
         proteinFasta = patric_api.getSequenceOfFeatures(geneIdSet, 'protein')
+        # replace bad characters for good while it is still text (e.g., 'J' to 'X')
+        lines = proteinFasta.split("\n")
+        for i in range(len(lines)):
+            if not lines[i].startswith(">"):
+                lines[i] = lines[i].replace("J", "X")
+        proteinFasta = "\n".join(lines)
+
         seqRecords = SeqIO.parse(StringIO(proteinFasta), "fasta", alphabet=IUPAC.extended_protein)
         proteinSeqDict = SeqIO.to_dict(seqRecords)
 
@@ -419,6 +426,9 @@ os.chdir(args.outputDirectory)
 proteinPositions=0
 codonPositions = 0
 protein_substitution_model = args.proteinModel
+rate_model = args.rateModel
+if numTaxa > 50:
+    rate_model = 'CAT'  # faster with this many taxa, per RAxML manual
 
 raxmlCommand = []
 partitionFile = ''
@@ -506,7 +516,7 @@ if len(proteinAlignments):
         proteinFileBase = phyloFileBase+"_proteins"
         proteinAlignmentFile = proteinFileBase+".phy"
         phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, proteinAlignmentFile)
-        prot_auto_model = "PROT"+args.rateModel+"AUTO"
+        prot_auto_model = "PROT"+rate_model+"AUTO"
         raxmlCommand = [args.raxmlExecutable, "-s", proteinAlignmentFile, "-n", proteinFileBase, "-m", prot_auto_model, "-p", "12345", "-T", str(args.threads), '-e', '10']
         LOG.write("command = "+" ".join(raxmlCommand)+"\n")
         raxml_command_lines.append(" ".join(raxmlCommand))
@@ -516,7 +526,7 @@ if len(proteinAlignments):
         raxml_process_time.append(time() - proc_start_time)
         LOG.write("return code from 'AUTO' run was "+str(return_code)+"\n")
         if return_code != 0:
-            LOG.write("raxml run to find best protein model failed. Defaulting to model LG")
+            LOG.write("raxml run to find best protein model failed.\n")
 
         protein_substitution_model = "LG" # default if we don't find answer
         if os.path.exists("RAxML_info."+proteinFileBase):
@@ -532,7 +542,7 @@ if len(proteinAlignments):
                 LOG.write("Analysis of proteins found best model: "+bestModel+"\n")
             startTree = "RAxML_bestTree."+proteinFileBase
         else:
-            LOG.write("Could not find output from running raxml on proteins alone. Cannot specify best protein model. Defaulting to '{}'\n".format(protein_substitution_model))
+            LOG.write("Could not find output from running raxml on proteins alone to find best protein model. Defaulting to '{}'\n".format(protein_substitution_model))
     raxmlCommand=[]
     if args.analyzeProteins and args.analyzeCodons:
         alignmentFile = phyloFileBase+".phy"
@@ -545,7 +555,7 @@ if len(proteinAlignments):
             for i in range(1,4):
                 PART.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
             PART.write("%s, proteins = %d-%d\n"%(protein_substitution_model, codonPositions+1, codonPositions+proteinPositions))
-        raxmlCommand = [args.raxmlExecutable, "-s", alignmentFile, "-n", phyloFileBase, "-m",  "GTR"+args.rateModel, "-q",  partitionFile,  "-p", "12345", "-T", str(args.threads)]
+        raxmlCommand = [args.raxmlExecutable, "-s", alignmentFile, "-n", phyloFileBase, "-m",  "GTR"+rate_model, "-q",  partitionFile,  "-p", "12345", "-T", str(args.threads)]
 
     elif args.analyzeCodons:
         alignmentFile = phyloFileBase+".phy"
@@ -554,14 +564,14 @@ if len(proteinAlignments):
         with open(phyloFileBase+".partitions", 'w') as PartitionFile:
             for i in range(1,4):
                 PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
-        raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%args.rateModel, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
+        raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%rate_model, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
         filesToMoveToDetailsFolder.append(phyloFileBase+".partitions")
 
     elif args.analyzeProteins:
         alignmentFile = phyloFileBase+".phy"
         filesToMoveToDetailsFolder.append(alignmentFile)
         phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, alignmentFile)
-        raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(args.rateModel, protein_substitution_model), "-p", "12345", "-T", str(args.threads)]
+        raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(rate_model, protein_substitution_model), "-p", "12345", "-T", str(args.threads)]
     #raxmlCommand.extend(["-e", "0.1"]) #limit on precision, faster than default 0.1
 
     if args.bootstrapReps > 0:
