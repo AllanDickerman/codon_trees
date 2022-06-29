@@ -4,6 +4,7 @@ import subprocess
 import os
 import os.path
 import patric_api
+from random import sample;
 #from Bio import BiopythonWarning
 from Bio.Alphabet import IUPAC
 from Bio import AlignIO
@@ -627,7 +628,34 @@ def writeConcatenatedAlignmentsPhylip(alignments, destination):
     writeOneAlignmentPhylip(alignments[alignmentIdList[0]], destination, taxonIdList, outputIds=True)
     for alignmentId in alignmentIdList[1:]:
         destination.write("\n")
-        writeOneAlignmentPhylip(alignments[alignmentId], destination, taxonIdList, outputIds=False)
+
+def sample_and_concatenate_alignments(alignments, sample_prop=1.0):
+# alignments is dictionary of Bio.multipleSeqAlignments
+    id_set = set(seq.id for aln in alignments for seq in alignments[aln])
+    totalLength = 0
+    taxonIdList=sorted(id_set)
+    alignmentIdList = sorted(alignments)
+    seqDict = {}
+    for seqid in id_set:
+        seqDict[seqid] = ""
+    for alignmentId in alignmentIdList:
+        alignment = alignments[alignmentId]
+        columns_to_write = None
+        sample_size = alignment.get_alignment_length()
+        if sample_prop < 1.0:
+            sample_size = int(alignment.get_alignment_length()*sample_prop)
+            columns_to_write = sample(range(alignment.get_alignment_length()), sample_size)
+        temp_id_set = set(id_set)
+        for record in alignment:
+            if columns_to_write:
+                for i in columns_to_write:
+                    seqDict[record.id] += str(record.seq[i]) 
+            else:
+                seqDict[record.id] += str(record.seq)
+            temp_id_set.remove(record.id)
+        for missing_id in temp_id_set:
+            seqDict[missing_id] += '-' * sample_size
+    return seqDict
 
 def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
     if Debug:
@@ -665,4 +693,47 @@ def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
     destination.close()
 
     return()
+
+def concatenate_codons_proteins(codonAlignments, proteinAlignments):
+    if Debug:
+        LOG.write("output_codons_proteins_fasta, ncodonAln=%d, nprotAln=%d\n"%(len(codonAlignments), len(proteinAlignments)))
+    if len(codonAlignments) + len(proteinAlignments) == 0:
+        LOG.write("output_codons_proteins_fasta() called with no alignments()\n")
+        return
+    taxonCodons={}
+    taxonSet = set()
+    for alignmentId in codonAlignments:
+        for seqRecord in codonAlignments[alignmentId]:
+            if not seqRecord.id in taxonCodons:
+                taxonCodons[seqRecord.id] = {}
+            taxonCodons[seqRecord.id][alignmentId] = str(seqRecord.seq)
+            taxonSet.add(seqRecord.id)
+    taxonProteins={}
+    for alignmentId in proteinAlignments:
+        for seqRecord in proteinAlignments[alignmentId]:
+            if not seqRecord.id in taxonProteins:
+                taxonProteins[seqRecord.id] = {}
+            taxonProteins[seqRecord.id][alignmentId] = str(seqRecord.seq)
+            taxonSet.add(seqRecord.id)
+    taxonIdList = sorted(taxonSet)
+    #destination = open(directory+fileBase+"+codonsAndProteins.phy", 'w')
+    #destination.write("%d\t%d\n"%(len(taxonIdList), codonPositions+proteinPositions))
+    alignmentIdList = sorted(codonAlignments)
+    proteinIdList = sorted(proteinAlignments)
+    seqDict = {}
+    for taxon in taxonSet:
+        seqDict[taxon] = ""
+        for alignmentId in alignmentIdList:
+            al_len = codonAlignments[alignmentId].get_alignment_length()
+            if taxon in taxonCodons and alignmentId in taxonCodons[taxon]:
+                seqDict[taxon] += taxonCodons[taxon][alignmentId]
+            else:
+                seqDict[taxon] += "-"*al_len+"\n"
+        for alignmentId in sorted(proteinAlignments):
+            al_len = proteinAlignments[alignmentId].get_alignment_length()
+            if taxon in taxonProteins and alignmentId in taxonProteins[taxon]:
+                seqDict[taxon] += taxonProteins[taxon][alignmentId]
+            else:
+                seqDict[taxon] += "-"*al_len+"\n"
+    return seqDict
 

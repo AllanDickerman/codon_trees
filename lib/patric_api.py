@@ -12,7 +12,8 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 Debug = False #shared across functions defined here
 LOG = sys.stderr
-Base_url="https://www.patricbrc.org/api/"
+#Base_url="https://www.patricbrc.org/api/"
+Base_url="https://p3.theseed.org/services/data_api/";
 
 Session = requests.Session()
 Session.headers.update({ 'accept': "text/tsv" })
@@ -500,6 +501,7 @@ def getGenomeObjectProteins(genomeObject):
         patricId = feature['id']
         if "protein_translation" in feature:
             aa_sequence = feature["protein_translation"]
+            aa_sequence = aa_sequence.replace("J", "X") # because RAxML considers 'J' illegal
         if 'function' in feature:
             product = feature['function']
         simpleSeq = Seq(aa_sequence, IUPAC.extended_protein)

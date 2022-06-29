@@ -29,21 +29,25 @@ parser.add_argument("--homolog_scope", metavar="global/local", choices=['global'
 parser.add_argument("--maxGenes", metavar="#", type=int, default=50, help="number of genes in concatenated alignment")
 parser.add_argument("--excessGenesProp", metavar="prop", type=float, default=0.5, help="multiplier of maxGenes to add to filter out low-scoring alignments")
 parser.add_argument("--excessGenesFixed", metavar="#", type=int, default=20, help="fixed excess genes to add to filter out low-scoring alignments")
-parser.add_argument("--bootstrapReps", metavar="#", type=int, default=100, help="number of raxml 'fast boostrap' replicates")
+parser.add_argument("--bootstrapReps", metavar="#", type=int, help="number of raxml 'fast boostrap' replicates")
 parser.add_argument("--maxGenomesMissing", metavar="#", type=int, default=0, help="genomes allowed to lack a member of any homolog group")
-parser.add_argument("--maxAllowedDups", metavar="maxDups", type=int, default=0, help="duplicated gene occurrences allowed within homolog group")
+parser.add_argument("--maxAllowedDups", metavar="#", type=int, default=0, help="duplicated gene occurrences allowed within homolog group")
 
 parser.add_argument("--aligner", metavar="program", type=str, choices=('muscle', 'mafft'), default="mafft", help="program to align protein sequences")
 parser.add_argument("--endGapTrimThreshold", metavar="maxPropGaps", type=float, default=0.5, help="stringency of end-gap trimming, 0-1.0, lower for less trimming")
 parser.add_argument("--raxmlExecutable", metavar="program_name", type=str, default="raxml", help="program to call, possibly with path")
 parser.add_argument("--rateModel", metavar="model", type=str, choices = ['CAT', 'GAMMA'], default="CAT", help="variable rate category model CAT|GAMMA")
 parser.add_argument("--proteinModel", metavar="model", type=str, default="AUTO", help="raxml protein substitution model")
+parser.add_argument("--protein_sample_prop", metavar="0.XX", type=float, default=0.5, help="proportion of positions to sample for discovery of optimal model")
 parser.add_argument("--analyzeCodons", action='store_true', help="analyze only codon nucleotides")
 parser.add_argument("--analyzeProteins", action='store_true', help="analyze only amino acids")
 parser.add_argument("--threads", "-t", metavar="T", type=int, default=2, help="threads for raxml")
 parser.add_argument("--deferRaxml", action='store_true', help="does not run raxml")
 parser.add_argument("--writePgfamAlignments", action='store_true', help="write fasta alignment per homolog used for tree")
-parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of counts per homolog per genome")
+parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of gene_id per homolog per genome")
+parser.add_argument("--writePgfamCountMatrix", action='store_true', help="write table of counts per homolog per genome")
+parser.add_argument("--writePhyloxml", action='store_true', help="write tree in phyloxml format")
+parser.add_argument("--phyloxmlFields", type=str, default='species,strain,geographic_group,isolation_country,host_group,host_common_name,collection_year,subtype,lineage,clade', metavar='data fields', help="comma-sparated genome fields for phyloxml")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="not needed if figtree executable on path")
 parser.add_argument("--universalRolesFile", type=str, metavar="path", help="path to file with universal roles to select conserved genes")
 parser.add_argument("--focusGenome", metavar="id", type=str, help="to be highlighted in color in Figtree")
@@ -100,7 +104,8 @@ logfileName += ".log"
 logfileName = os.path.join(args.outputDirectory, logfileName)
 
 global LOG 
-LOG = open(logfileName, 'w')
+#LOG = open(logfileName, 'w')
+LOG = sys.stderr
 LOG.write("starting %s\n"%sys.argv[0])
 LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(starttime))+"\n")
 LOG.write("args= "+str(args)+"\n\n")
@@ -186,8 +191,8 @@ LOG.flush()
 if args.debugMode:
     patric_api.Debug = True
     phylocode.Debug = True
-patric_api.LOG = LOG
-phylocode.LOG = LOG
+#patric_api.LOG = LOG
+#phylocode.LOG = LOG
 
 
 # this is where we gather the list of Pgfam genes for each genome ID
@@ -241,6 +246,10 @@ if args.writePgfamMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".homologMatrix.txt"), 'w') as F:
         patric_api.write_homolog_gene_matrix(homologMatrix, F)
 
+if args.writePgfamCountMatrix:
+    with open(os.path.join(args.outputDirectory, args.outputBase+".homologCountMatrix.txt"), 'w') as F:
+        patric_api.write_homolog_count_matrix(homologMatrix, F)
+
 genesPerGenome = {}
 for genome in genomeIds:
     genesPerGenome[genome] = 0
@@ -282,8 +291,6 @@ filesToDelete = []
 
 preflightTests.append(("single copy homologs > 0", len(singleCopyHomologs) > 0))
 ## perform preflight test
-preflightFile = os.path.join(args.outputDirectory, args.outputBase+".preflight")
-filesToDelete.append(args.outputBase+".preflight")
 
 maxGenesWithExcess = int(args.maxGenes * (1+args.excessGenesProp) + args.excessGenesFixed)
 if len(singleCopyHomologs) > maxGenesWithExcess:
@@ -326,9 +333,9 @@ for homologId in singleCopyHomologs:
         for feature_id in proteinSeqDict:
             if "undefined" in feature_id:
                 problem_seq = proteinSeqDict[feature_id] # seqrecord with "undefined" in id
-                comment = "Problem: homology group {} has undefined identfier {}, deleting it\nrecord={}\n".format(homologId, feature_id, problem_seq)
+                comment = "homology group {} has undefined identfier {}, skipping it\nrecord={}\n".format(homologId, feature_id, problem_seq)
                 LOG.write(comment)
-                sys.stderr.write(comment)
+                #sys.stderr.write(comment)
                 all_ok = False
         if not all_ok:
             continue # skip this homology group
@@ -373,15 +380,16 @@ with open(genesPerGenomeFile, 'w') as F:
     for genome in sorted(genesPerGenome, key=genesPerGenome.get):
         F.write("%s\t%d\t%d\t%d\n"%(genome, genesPerGenome[genome], singleCopyGenesPerGenome[genome], filteredSingleCopyGenesPerGenome[genome]))
 
-with open(preflightFile, 'w') as F:
-    passed = True
-    for test in preflightTests:
-        passed &= test[1]
-        F.write(test[0] + "\t" + str(test[1]) + "\n")
-    F.write("All tests passed\t"+str(passed)+"\n")
+passed = True
+LOG.write("Initial checks of environment:\n")
+for test in preflightTests:
+    passed &= test[1]
+    LOG.write(test[0] + "\t" + str(test[1]) + "\n")
+LOG.write("All tests passed\t"+str(passed)+"\n")
 
 LOG.flush()
 codonAlignments = {}
+sum_protein_positions = 0
 for homologId in singleCopyHomologs:
     proteinAlignment = proteinAlignments[homologId]
     if args.debugMode:
@@ -431,6 +439,9 @@ if numTaxa > 50:
     rate_model = 'CAT'  # faster with this many taxa, per RAxML manual
 
 raxmlCommand = []
+raxml_command_lines = []
+raxml_analysis_goal = []
+raxml_process_time = []
 partitionFile = ''
 if len(proteinAlignments):
 # write the genes included in each homology group (and those paralogs excluded)
@@ -504,25 +515,29 @@ if len(proteinAlignments):
     if len(codonAlignments) == 0:
         args.analyzeCodons = False
 
-    raxml_command_lines = []
-    raxml_analysis_goal = []
-    raxml_process_time = []
 # finally, output concatenated protein and/or DNA alignment and partitions and raxml command to appropriate files
     startTree = None
     if args.analyzeProteins and args.proteinModel == "AUTO":
         # analyze just protein data with model AUTO, parse output to find best protein model
         # use output tree as starting tree to save time
         LOG.write("running raxml on proteins with model = 'AUTO' to find best model for proteins.\n")
+
+        positions_to_sample = proteinPositions
+        if args.protein_sample_prop > 1.0 or args.protein_sample_prop < 0:
+            args.protein_sample_prop = 1.0
+        sampled_prots = phylocode.sample_and_concatenate_alignments(proteinAlignments, args.protein_sample_prop)
         proteinFileBase = phyloFileBase+"_proteins"
-        proteinAlignmentFile = proteinFileBase+".phy"
-        phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, proteinAlignmentFile)
-        prot_auto_model = "PROT"+rate_model+"AUTO"
-        raxmlCommand = [args.raxmlExecutable, "-s", proteinAlignmentFile, "-n", proteinFileBase, "-m", prot_auto_model, "-p", "12345", "-T", str(args.threads), '-e', '10']
+        proteinAlignmentFile = proteinFileBase+".afa"
+        F = open(proteinAlignmentFile, 'w')
+        for seq_id in sorted(sampled_prots):
+            F.write(">"+seq_id+"\n"+sampled_prots[seq_id]+"\n")
+        F.close()
+        raxmlCommand = [args.raxmlExecutable, "-s", proteinAlignmentFile, "-n", proteinFileBase, "-m", "PROTCATAUTO", "-p", "12345", "-T", str(args.threads), '-e', '10']
         LOG.write("command = "+" ".join(raxmlCommand)+"\n")
         raxml_command_lines.append(" ".join(raxmlCommand))
         raxml_analysis_goal.append("Analyze proteins with model 'AUTO' to find best substitution model.")
         proc_start_time = time()
-        return_code = subprocess.call(raxmlCommand, stdout=LOG, stderr=LOG)
+        return_code = subprocess.call(raxmlCommand, shell=False) #, stdout=LOG, stderr=LOG)
         raxml_process_time.append(time() - proc_start_time)
         LOG.write("return code from 'AUTO' run was "+str(return_code)+"\n")
         if return_code != 0:
@@ -545,10 +560,14 @@ if len(proteinAlignments):
             LOG.write("Could not find output from running raxml on proteins alone to find best protein model. Defaulting to '{}'\n".format(protein_substitution_model))
     raxmlCommand=[]
     if args.analyzeProteins and args.analyzeCodons:
-        alignmentFile = phyloFileBase+".phy"
+        alignmentFile = phyloFileBase+".afa"
         filesToMoveToDetailsFolder.append(alignmentFile)
-        phylocode.outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, alignmentFile)
-
+        F = open(alignmentFile, "w")
+        seqDict = phylocode.concatenate_codons_proteins(codonAlignments, proteinAlignments)
+        for seqId in seqDict:
+            F.write(">"+seqId+"\n"+seqDict[seqId]+"\n")
+        F.close()
+        
         partitionFile = phyloFileBase+".partitions"
         filesToMoveToDetailsFolder.append(partitionFile)
         with open(partitionFile, 'w') as PART:
@@ -564,7 +583,7 @@ if len(proteinAlignments):
         with open(phyloFileBase+".partitions", 'w') as PartitionFile:
             for i in range(1,4):
                 PartitionFile.write("DNA, codon%d = %d-%d\\3\n"%(i, i, codonPositions))
-        raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "GTR%s"%rate_model, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
+        raxmlCommand = [args.raxmlExecutable, "-s", alignmentFile, "-n", phyloFileBase, "-m",  "GTR%s"%rate_model, "-q",  phyloFileBase+".partitions",  "-p", "12345", "-T", str(args.threads)]
         filesToMoveToDetailsFolder.append(phyloFileBase+".partitions")
 
     elif args.analyzeProteins:
@@ -599,7 +618,7 @@ if len(proteinAlignments) and not args.deferRaxml:
     for fl in glob.glob("RAxML_*"+phyloFileBase):
         os.remove(fl)
     raxml_start_time = time()
-    result_code = subprocess.call(raxmlCommand, shell=False, stdout=LOG, stderr=LOG)
+    result_code = subprocess.call(raxmlCommand, shell=False) #, stdout=LOG, stderr=LOG)
     raxml_process_time.append(time() - raxml_start_time)
     
     LOG.write("raxml completed: elapsed seconds = %f\n"%(time() - raxml_start_time))
@@ -616,7 +635,7 @@ if len(proteinAlignments) and not args.deferRaxml:
         raxml_command_lines.append(" ".join(raxmlCommand))
         raxml_analysis_goal.append("Map RELL support values onto best tree.")
         proc_start_time = time()
-        result_code = subprocess.call(raxmlCommand, shell=False, stdout=LOG, stderr=LOG)
+        result_code = subprocess.call(raxmlCommand, shell=False) #/, stdout=LOG, stderr=LOG)
         raxml_process_time.append(time() - proc_start_time)
         LOG.write("Mapped ultrafast bootstrap support values onto tree.\n")
         if os.path.exists("RAxML_bipartitions."+fileBase):
@@ -624,12 +643,13 @@ if len(proteinAlignments) and not args.deferRaxml:
             filesToMoveToDetailsFolder.append("RAxML_info."+fileBase)
         
     program_return_value = 1 # return this to signal no tree was generated == failure
+    treeWithGenomeIdsFile = None
     if os.path.exists(raxmlNewickFileName):
         program_return_value = 0 # means success
         F = open(raxmlNewickFileName)
         originalNewick = F.read()
         F.close()
-        treeWithGenomeIdsFile = phyloFileBase + "_treeWithGenomeIds.nwk"
+        treeWithGenomeIdsFile = phyloFileBase + "_tree.nwk"
         #filesToMoveToDetailsFolder.append(treeWithGenomeIdsFile)
         F = open(treeWithGenomeIdsFile, 'w')
         F.write(originalNewick)
@@ -667,7 +687,6 @@ if len(proteinAlignments) and not args.deferRaxml:
 LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(time()))+"\n")
 LOG.write("Total job duration %d seconds\n"%(time()-starttime))
         
-
 analysisStatsFile = phyloFileBase+".analysisStats"
 OUT = open(analysisStatsFile, 'w')
 OUT.write("Statistics for CodonTree Analysis\n")
@@ -837,6 +856,30 @@ if args.debugMode or len(singleCopyHomologs) < args.maxGenes:
         HTML.write("</table>\n")
 HTML.write("</html>\n")
 HTML.close()
+
+if args.writePhyloxml and treeWithGenomeIdsFile:
+    LOG.write("writePhyloxml\n")
+    command = ["p3x-newick-to-phyloxml","-l","genome_id"]
+    if args.phyloxmlFields and len(args.phyloxmlFields):
+        command.extend(("-g", args.phyloxmlFields))
+        if 0: # test just letting p3x-newick-to-phyloxml fetch the metadata
+            metadata_out_file = None
+            genome_metadata_fields = ",".split(args.phyloxmlFields)
+            genome_metadata = patric_api.getDataForGenomes(genomeIds, genome_metadata_fields)
+            metadata_out_file = phyloFileBase+"_genome_metadata.txt"
+            filesToMoveToDetailsFolder.append(metadata_out_file)
+            OUT = open(genome_metadata, 'w')
+            OUT.write("\t".join(genome_metadata_fields)+"\n")
+            for row in genome_metadata:
+                OUT.write("\t".join(row)+"\n")
+            OUT.close()
+
+    command.append(treeWithGenomeIdsFile)
+    if args.debugMode:
+        sys.stderr.write("calling p3x-newick-to-phyloxml, command line:\n"+" ".join(command)+"\n")
+    result_code = subprocess.call(command, shell=False) #/, stdout=LOG, stderr=LOG)
+    phyloxml_file = treeWithGenomeIdsFile.replace(".nwk", ".xml")
+
 
 LOG.write("output written to directory %s\n"%args.outputDirectory)
 sys.stdout.write("\n")
