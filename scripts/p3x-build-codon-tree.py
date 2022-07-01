@@ -44,8 +44,8 @@ parser.add_argument("--analyzeProteins", action='store_true', help="analyze only
 parser.add_argument("--threads", "-t", metavar="T", type=int, default=2, help="threads for raxml")
 parser.add_argument("--deferRaxml", action='store_true', help="does not run raxml")
 parser.add_argument("--writePgfamAlignments", action='store_true', help="write fasta alignment per homolog used for tree")
-parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of gene_id per homolog per genome")
-parser.add_argument("--writePgfamCountMatrix", action='store_true', help="write table of counts per homolog per genome")
+parser.add_argument("--writePgfamMatrix", type=float, help="write table of gene_id per homolog per genome (present in > proportion of genomes)")
+parser.add_argument("--writePgfamCountMatrix", type=float, help="write table of counts per homolog per genome (present in > proportion of genomes)")
 parser.add_argument("--writePhyloxml", action='store_true', help="write tree in phyloxml format")
 parser.add_argument("--phyloxmlFields", type=str, default='species,strain,geographic_group,isolation_country,host_group,host_common_name,collection_year,subtype,lineage,clade', metavar='data fields', help="comma-sparated genome fields for phyloxml")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="not needed if figtree executable on path")
@@ -244,11 +244,11 @@ if len(genomesWithoutData):
 
 if args.writePgfamMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".homologMatrix.txt"), 'w') as F:
-        patric_api.write_homolog_gene_matrix(homologMatrix, F)
+        patric_api.write_homolog_gene_matrix(homologMatrix, F, args.writePgfamMatrix)
 
 if args.writePgfamCountMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".homologCountMatrix.txt"), 'w') as F:
-        patric_api.write_homolog_count_matrix(homologMatrix, F)
+        patric_api.write_homolog_count_matrix(homologMatrix, F, args.writePgfamCountMatrix)
 
 genesPerGenome = {}
 for genome in genomeIds:

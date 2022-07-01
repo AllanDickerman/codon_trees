@@ -395,50 +395,62 @@ def getPgfamMatrixFromUniversalRoles(genomeIdSet, universalRolesFile, ggpMat=Non
         ggpMat[pgfam][genome].add(gene)
     return ggpMat
 
-def write_homolog_gene_matrix(ggpMat, fileHandle):
+def write_homolog_gene_matrix(ggpMat, fileHandle, minProp=0):
     """ write out homologGeneMatrix to file handle 
     data is list of genes per homolog per genome
     rows are homologs
     cols are genomes
     column headers identify genomes
     genes are comma-separated
+    write only rows where > minProp*num_genomes genomes have genes
+    if minProp is > 1, write rows where > minProp genomes have genes
     """
     # first collect set of all genomes
     genomeSet = set()
     for homolog in ggpMat:
         genomeSet.update(set(ggpMat[homolog].keys()))
     genomes = sorted(genomeSet)
+    min_genomes_required =  minProp
+    if minProp < 1:
+        min_genomes_required = minProp * len(genomes)
     fileHandle.write("PGFam\t"+"\t".join(genomes)+"\n")
     for homolog in ggpMat:
-        fileHandle.write(homolog)
-        for genome in genomes:
-            gene = ""
-            if genome in ggpMat[homolog]:
-                gene = ",".join(ggpMat[homolog][genome])
-            fileHandle.write("\t"+gene)
-        fileHandle.write("\n")
+        if len(ggpMat[homolog]) >= min_genomes_required:
+            fileHandle.write(homolog)
+            for genome in genomes:
+                gene = ""
+                if genome in ggpMat[homolog]:
+                    gene = ",".join(ggpMat[homolog][genome])
+                fileHandle.write("\t"+gene)
+            fileHandle.write("\n")
 
-def write_homolog_count_matrix(ggpMat, fileHandle):
+def write_homolog_count_matrix(ggpMat, fileHandle, minProp=0):
     """ write out matrix of counts per homolog per genome to file handle 
     data is count of genes per homolog per genome (integers)
     rows are homologs
     cols are genomes
     column headers identify genomes
+    write only rows where > minProp*num_genomes genomes have genes
+    if minProp is > 1, write rows where > minProp genomes have genes
     """
     # first collect set of all genomes
     genomeSet = set()
     for homolog in ggpMat:
         genomeSet.update(set(ggpMat[homolog].keys()))
     genomes = sorted(genomeSet)
+    min_genomes_required =  minProp
+    if minProp < 1:
+        min_genomes_required = minProp * len(genomes)
     fileHandle.write("PGFam\t"+"\t".join(genomes)+"\n")
     for homolog in ggpMat:
-        fileHandle.write(homolog)
-        for genome in genomes:
-            count = 0
-            if genome in ggpMat[homolog]:
-                count = len(ggpMat[homolog][genome])
-            fileHandle.write("\t%d"%count)
-        fileHandle.write("\n")
+        if len(ggpMat[homolog]) >= min_genomes_required:
+            fileHandle.write(homolog)
+            for genome in genomes:
+                count = 0
+                if genome in ggpMat[homolog]:
+                    count = len(ggpMat[homolog][genome])
+                fileHandle.write("\t%d"%count)
+            fileHandle.write("\n")
 
 def read_homolog_gene_matrix(fileHandle):
     """ read homologGeneMatrix from file handle
