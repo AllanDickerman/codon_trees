@@ -44,10 +44,10 @@ parser.add_argument("--analyzeProteins", action='store_true', help="analyze only
 parser.add_argument("--threads", "-t", metavar="T", type=int, default=2, help="threads for raxml")
 parser.add_argument("--deferRaxml", action='store_true', help="does not run raxml")
 parser.add_argument("--writePgfamAlignments", action='store_true', help="write fasta alignment per homolog used for tree")
-parser.add_argument("--writePgfamMatrix", action='store_true', help="write table of gene_id per homolog per genome")
-parser.add_argument("--writePgfamCountMatrix", action='store_true', help="write table of counts per homolog per genome")
+parser.add_argument("--writePgfamMatrix", type=float, help="write table of gene_id per homolog per genome (present in > proportion of genomes)")
+parser.add_argument("--writePgfamCountMatrix", type=float, help="write table of counts per homolog per genome (present in > proportion of genomes)")
 parser.add_argument("--writePhyloxml", action='store_true', help="write tree in phyloxml format")
-parser.add_argument("--phyloxmlFields", type=str, default='species,strain,geographic_group,isolation_country,host_group,host_common_name,collection_year,subtype,lineage,clade', metavar='data fields', help="comma-sparated genome fields for phyloxml")
+parser.add_argument("--phyloxmlFields", type=str, default='genome_name,species,strain,isolation_country,host_common_name,collection_year', metavar='data fields', help="comma-sparated genome fields for phyloxml")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="not needed if figtree executable on path")
 parser.add_argument("--universalRolesFile", type=str, metavar="path", help="path to file with universal roles to select conserved genes")
 parser.add_argument("--focusGenome", metavar="id", type=str, help="to be highlighted in color in Figtree")
@@ -244,11 +244,11 @@ if len(genomesWithoutData):
 
 if args.writePgfamMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".homologMatrix.txt"), 'w') as F:
-        patric_api.write_homolog_gene_matrix(homologMatrix, F)
+        patric_api.write_homolog_gene_matrix(homologMatrix, F, args.writePgfamMatrix)
 
 if args.writePgfamCountMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".homologCountMatrix.txt"), 'w') as F:
-        patric_api.write_homolog_count_matrix(homologMatrix, F)
+        patric_api.write_homolog_count_matrix(homologMatrix, F, args.writePgfamCountMatrix)
 
 genesPerGenome = {}
 for genome in genomeIds:
@@ -543,6 +543,9 @@ if len(proteinAlignments):
         if return_code != 0:
             LOG.write("raxml run to find best protein model failed.\n")
 
+        filesToMoveToDetailsFolder.append(proteinAlignmentFile)
+        if os.path.exists(proteinAlignmentFile+".reduced"):
+            filesToDelete.append(proteinAlignmentFile+".reduced")
         protein_substitution_model = "LG" # default if we don't find answer
         if os.path.exists("RAxML_info."+proteinFileBase):
             filesToMoveToDetailsFolder.append("RAxML_info."+proteinFileBase)
@@ -590,7 +593,7 @@ if len(proteinAlignments):
         alignmentFile = phyloFileBase+".phy"
         filesToMoveToDetailsFolder.append(alignmentFile)
         phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, alignmentFile)
-        raxmlCommand = [args.raxmlExecutable, "-s", phyloFileBase+".phy", "-n", phyloFileBase, "-m",  "PROT%s%s"%(rate_model, protein_substitution_model), "-p", "12345", "-T", str(args.threads)]
+        raxmlCommand = [args.raxmlExecutable, "-s", alignmentFile, "-n", phyloFileBase, "-m",  "PROT%s%s"%(rate_model, protein_substitution_model), "-p", "12345", "-T", str(args.threads)]
     #raxmlCommand.extend(["-e", "0.1"]) #limit on precision, faster than default 0.1
 
     if args.bootstrapReps > 0:
@@ -641,6 +644,8 @@ if len(proteinAlignments) and not args.deferRaxml:
         if os.path.exists("RAxML_bipartitions."+fileBase):
             raxmlNewickFileName = "RAxML_bipartitions."+fileBase
             filesToMoveToDetailsFolder.append("RAxML_info."+fileBase)
+        if os.path.exists(alignmentFile+".reduced"):
+            filesToDelete.append(alignmentFile+".reduced")
         
     treeWithGenomeIdsFile = None
     if not os.path.exists(raxmlNewickFileName):
@@ -880,7 +885,7 @@ if args.writePhyloxml and treeWithGenomeIdsFile:
     if args.debugMode:
         sys.stderr.write("calling p3x-newick-to-phyloxml, command line:\n"+" ".join(command)+"\n")
     result_code = subprocess.call(command, shell=False) #/, stdout=LOG, stderr=LOG)
-    phyloxml_file = treeWithGenomeIdsFile.replace(".nwk", ".xml")
+    phyloxml_file = treeWithGenomeIdsFile.replace(".nwk", ".phyloxml")
 
 
 LOG.write("output written to directory %s\n"%args.outputDirectory)
@@ -901,8 +906,6 @@ for fn in filesToMoveToDetailsFolder:
         LOG.write("tried to move {} to detailsDirectory, but not found.\n".format(fn))
 LOG.write("files moved: %d\n"%numMoved)
 filesToDelete.extend(glob.glob("RAxML*"))
-if os.path.exists(phyloFileBase+".phy.reduced"):
-    filesToDelete.append(phyloFileBase+".phy.reduced")
 if not args.debugMode:
     numDeleted = 0
     for fn in filesToDelete:
