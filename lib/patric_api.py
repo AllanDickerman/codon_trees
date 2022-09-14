@@ -21,6 +21,10 @@ Session.headers.update({ "Content-Type": "application/rqlquery+x-www-form-urlenc
 
 PatricUser = None
 
+def setDebug(state):
+    Debug = state
+    Session.verify= not Debug # turn off authentiction if in debug mode
+
 def authenticateByFile(tokenFile=None):
     if not tokenFile:
         tokenFile = os.path.join(os.environ.get('HOME'), ".patric_token")

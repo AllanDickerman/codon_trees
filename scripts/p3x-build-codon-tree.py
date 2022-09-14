@@ -189,7 +189,7 @@ else:
 LOG.flush()
 
 if args.debugMode:
-    patric_api.Debug = True
+    patric_api.setDebug(True)
     phylocode.Debug = True
 #patric_api.LOG = LOG
 #phylocode.LOG = LOG
