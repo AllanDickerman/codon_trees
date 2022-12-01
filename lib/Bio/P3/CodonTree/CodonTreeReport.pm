@@ -1,4 +1,4 @@
-package Bio::KBase::AppService::CodonTreeReport;
+package Bio::P3::CodonTree::CodonTreeReport;
 
 use strict;
 use Data::Dumper;

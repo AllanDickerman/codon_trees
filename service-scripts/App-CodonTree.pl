@@ -4,7 +4,7 @@
 
 
 use Bio::KBase::AppService::AppScript;
-use Bio::KBase::AppService::CodonTreeReport;
+use Bio::P3::CodonTree::CodonTreeReport;
 use P3DataAPI;
 use IPC::Run;
 use Cwd;
