@@ -647,9 +647,11 @@ if len(proteinAlignments) and not args.deferRaxml:
         if os.path.exists(alignmentFile+".reduced"):
             filesToDelete.append(alignmentFile+".reduced")
         
-    program_return_value = 1 # return this to signal no tree was generated == failure
     treeWithGenomeIdsFile = None
-    if os.path.exists(raxmlNewickFileName):
+    if not os.path.exists(raxmlNewickFileName):
+        LOG.write("Expected tree file %s not found\n" % (raxmlNewickFileName) );
+        program_return_value = 1 # return this to signal no tree was generated == failure
+    else:
         program_return_value = 0 # means success
         F = open(raxmlNewickFileName)
         originalNewick = F.read()
@@ -912,10 +914,11 @@ if not args.debugMode:
         LOG.write("\t"+fn+"\n")
     LOG.write("files deleted: %d\n"%numDeleted)
 logfileName = os.path.basename(logfileName)
-LOG.write("finally, will move this file, %s, to %s\n"%(logfileName, detailsDirectory))
-LOG.close()
 # finally, move the log file into the detailsDirectory
-os.rename(logfileName, os.path.join(detailsDirectory, logfileName))
+if os.path.exists(logfileName):
+    LOG.write("finally, will move this file, %s, to %s\n"%(logfileName, detailsDirectory))
+    LOG.close()
+    os.rename(logfileName, os.path.join(detailsDirectory, logfileName))
 
 # return value indicates whether tree was constructed or not
 sys.exit(program_return_value)
