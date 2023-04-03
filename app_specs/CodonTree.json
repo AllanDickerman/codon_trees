@@ -38,6 +38,14 @@
       "default": []
     },
     {
+        "id": "genome_metadata_fields",
+        "label": "Genome Metadata Fields",
+        "required": 0,
+        "allow_multiple": 1,
+        "desc": "Fields to be retrieved for each genome.",
+        "type": "string"
+    },
+    {
       "id": "number_of_genes",
       "required": 0,
       "default": "20",

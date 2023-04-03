@@ -189,7 +189,7 @@ else:
 LOG.flush()
 
 if args.debugMode:
-    patric_api.Debug = True
+    patric_api.setDebug(True)
     phylocode.Debug = True
 #patric_api.LOG = LOG
 #phylocode.LOG = LOG
@@ -679,7 +679,7 @@ if len(proteinAlignments) and not args.deferRaxml:
             if len(nexusFilesWritten) > 1:
                 filesToDelete.append(nexusFilesWritten[1]) # get rid of codontree_tipsAligned.nex
             for nexusFile in nexusFilesWritten:
-                for imageFormat in ("PNG", "SVG", "PDF"):
+                for imageFormat in ("SVG"): #("PNG", "SVG", "PDF"):
                     imageFile = phylocode.generateFigtreeImage(nexusFile, numTaxa=len(allGenomeIds), figtreeJar=args.pathToFigtreeJar, imageFormat=imageFormat)
                     LOG.write("created figtree figure: {}\n".format(imageFile))
                     if os.path.exists(imageFile):
