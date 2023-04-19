@@ -679,17 +679,18 @@ if len(proteinAlignments) and not args.deferRaxml:
             if len(nexusFilesWritten) > 1:
                 filesToDelete.append(nexusFilesWritten[1]) # get rid of codontree_tipsAligned.nex
             for nexusFile in nexusFilesWritten:
-                for imageFormat in ("SVG"): #("PNG", "SVG", "PDF"):
-                    imageFile = phylocode.generateFigtreeImage(nexusFile, numTaxa=len(allGenomeIds), figtreeJar=args.pathToFigtreeJar, imageFormat=imageFormat)
-                    LOG.write("created figtree figure: {}\n".format(imageFile))
-                    if os.path.exists(imageFile):
-                        if "_tipsAligned" in nexusFile:
-                            filesToMoveToDetailsFolder.append(imageFile)
-                        if imageFormat == "SVG" and not svgTreeImage:
-                            svgTreeImage = imageFile
-                            LOG.write("svg image for report: {}\n".format(imageFile))
-                    else:
-                        LOG.write("image file {} does not exist.\n".format(imageFile))
+                #for imageFormat in ("SVG"): #("PNG", "SVG", "PDF"):
+                imageFormat = "SVG"
+                imageFile = phylocode.generateFigtreeImage(nexusFile, numTaxa=len(allGenomeIds), figtreeJar=args.pathToFigtreeJar, imageFormat=imageFormat)
+                LOG.write("created figtree figure: {}\n".format(imageFile))
+                if os.path.exists(imageFile):
+                    if "_tipsAligned" in nexusFile:
+                        filesToMoveToDetailsFolder.append(imageFile)
+                    if imageFormat == "SVG" and not svgTreeImage:
+                        svgTreeImage = imageFile
+                        LOG.write("svg image for report: {}\n".format(imageFile))
+                else:
+                    LOG.write("image file {} does not exist.\n".format(imageFile))
 
 LOG.write(strftime("%a, %d %b %Y %H:%M:%S", localtime(time()))+"\n")
 LOG.write("Total job duration %d seconds\n"%(time()-starttime))
