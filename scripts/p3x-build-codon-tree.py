@@ -43,6 +43,7 @@ parser.add_argument("--analyzeCodons", action='store_true', help="analyze only c
 parser.add_argument("--analyzeProteins", action='store_true', help="analyze only amino acids")
 parser.add_argument("--threads", "-t", metavar="T", type=int, default=2, help="threads for raxml")
 parser.add_argument("--deferRaxml", action='store_true', help="does not run raxml")
+parser.add_argument("--exitBeforeAlignment", action='store_true', help="Don't align, useful for getting PGFam matrix")
 parser.add_argument("--writePgfamAlignments", action='store_true', help="write fasta alignment per homolog used for tree")
 parser.add_argument("--writePgfamMatrix", type=float, help="write table of gene_id per homolog per genome (present in > proportion of genomes)")
 parser.add_argument("--writePgfamCountMatrix", type=float, help="write table of counts per homolog per genome (present in > proportion of genomes)")
@@ -249,6 +250,9 @@ if args.writePgfamMatrix:
 if args.writePgfamCountMatrix:
     with open(os.path.join(args.outputDirectory, args.outputBase+".homologCountMatrix.txt"), 'w') as F:
         patric_api.write_homolog_count_matrix(homologMatrix, F, args.writePgfamCountMatrix)
+
+if args.exitBeforeAlignment:
+    sys.exit(0)
 
 genesPerGenome = {}
 for genome in genomeIds:
