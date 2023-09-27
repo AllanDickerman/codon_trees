@@ -1,14 +1,15 @@
 import os
 import sys
 import requests
-import urllib
+import urllib.parse
 import copy
 import time
-from Bio.Alphabet import IUPAC
+#from Bio.Alphabet import IUPAC
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+import subprocess
 
 Debug = False #shared across functions defined here
 LOG = sys.stderr
@@ -23,6 +24,7 @@ PatricUser = None
 
 def setDebug(state):
     Debug = state
+    LOG.write("setting Debug to {}\n".format(Debug))
     Session.verify= not Debug # turn off authentiction if in debug mode
 
 def authenticateByFile(tokenFile=None):
@@ -56,20 +58,29 @@ def getGenomeIdsNamesByName(name, limit='10'):
     return(ret.text.replace('"', ''))
 
 def getGenomeGroupIds(genomeGroupName):
-    LOG.write("getGenomeGroupIds(%s), PatricUser=%s\n"%(genomeGroupName, PatricUser))
-    genomeGroupSpecifier = PatricUser+"/home/Genome Groups/"+genomeGroupName
-    genomeGroupSpecifier = "/"+urllib.quote(genomeGroupSpecifier)
-    genomeGroupSpecifier = genomeGroupSpecifier.replace("/", "%2f")
+    LOG.write("getGenomeGroupIds({}), PatricUser={}, debug={}\n".format(genomeGroupName, PatricUser, Debug))
+    genomeGroupSpecifier = "/"+PatricUser+"/home/Genome Groups/"+genomeGroupName
+    genomeGroupSpecifier = urllib.parse.quote_plus(genomeGroupSpecifier)   #.replace("/", "%2f")
     query = "in(genome_id,GenomeGroup("+genomeGroupSpecifier+"))"
     query += "&select(genome_id)"
     query += "&limit(10000)"
-    if Debug:
-        LOG.write("requesting group %s for user %s\n"%(genomeGroupName, PatricUser))
-        LOG.write("query =  %s\n"%(query))
+    if 1 or Debug:
+        LOG.write("debug = {}\n".format(Debug))
+        LOG.write("query =  {}\n".format(query))
     ret = Session.get(Base_url+"genome/", params=query)
     if Debug:
         LOG.write(ret.url+"\n")
     return(ret.text.replace('"', '').split("\n"))[1:-1]
+
+def getGenomeGroupIdsCLI(genomeGroupName):
+    # use Patric/BVBRC CLI to get genome group members
+    LOG.write("getGenomeGroupIdsCLI({}), PatricUser={}, debug={}\n".format(genomeGroupName, PatricUser, Debug))
+    command = ['p3-get-genome-group', genomeGroupName]
+    proc = subprocess.run(command, shell=False, capture_output = True, text = True)
+    retval = []
+    for line in proc.stdout.split("\n")[1:]:
+        retval.append(line)
+    return retval
 
 def getNamesForGenomeIds(genomeIds):
 #    return getDataForGenomes(genomeIdSet, ["genome_id", "genome_name"])
@@ -241,53 +252,6 @@ def getProductsForPgfamsByN(pgfams, n=5):
         i += n
     return retval
 
-def getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile, scope='global'):
-    """ Get the list of genes, with PGFam IDs, for universal roles for the specified genomes """
-    if Debug:
-        LOG.write("patric_api.getGenesForUniversalRolesForGenomeSet() called with %d genomes and roles file %s\n"%(len(genomeIdSet), universalRolesFile))
-    universalRoles = set()
-    if os.path.exists(universalRolesFile):
-        with open(universalRolesFile) as F:
-            for line in F:
-                role = line.rstrip().split("\t")[2]
-                universalRoles.add(role)
-    #genomeIds = list(genomeIdSet)
-    genomeIds = genomeIdSet
-    genomeBatchSize = 10 # query using this batch size
-    roleBatchSize = 10
-    genomeIndex = 0
-    roleList = list(universalRoles)
-    retval = []
-    #gids = genomeIds[genomeIndex:genomeIndex+genomeBatchSize]
-    gids = [genomeIds]
-    roleIndex = 0
-    familyType = 'pgfam_id'
-    if scope == 'local':
-        familyType = 'plfam_id'
-    #while roleIndex < len(universalRoles):
-    roles = roleList[roleIndex:roleIndex+roleBatchSize]
-    query = "in(genome_id,(%s))"%",".join(gids) #, "in(product,(%s))"%",".join(roles))
-    query += "&select(genome_id,patric_id,{},product)".format(familyType)
-    query += "&limit(25000)"
-    response = Session.get(Base_url+"genome_feature/", params=query) #, 
-    if Debug:
-        LOG.write("query= %s\n"%response.url)
-    for line in response.text.split("\n"):
-        line = line.replace('"','')
-        if Debug:
-            LOG.write("row= "+line+"\n")
-        row = line.split("\t")
-        if len(row) != 4:
-            continue
-        if not row[2].startswith("PGF"):
-            continue
-        if not row[3] in roles: # check to be sure product matches at least one intended product
-            LOG.write("role not in uniRoles: %s\n"%row[3])
-            continue
-        retval.append(row)
-        roleIndex += roleBatchSize
-    return retval
-
 def getPatricGenePosForGenome(genomeId):
     if Debug:
         LOG.write("getPatricGenesPosForGenome() called for %s\n"%genomeId)
@@ -380,18 +344,31 @@ def get_homolog_count_matrix(genomeIdSet, ggpMat = None, scope='global'):
         ggpMat[homolog][genome] += 1
     return ggpMat
 
-def getPgfamMatrixFromUniversalRoles(genomeIdSet, universalRolesFile, ggpMat=None, scope='global'):
-    """ Search for pgfams limited from universal roles """
-    genomeGenePgfamList = getGenesForUniversalRolesForGenomeSet(genomeIdSet, universalRolesFile, scope=scope)
-    prevMat = None
-    if ggpMat: # if an existaing matrix was passed, extend it
-        prevMat = copy.deepcopy(ggpMat)
-    else:
+def getHomologGenomeMatrix(genomes, homologs, ggpMat=None, scope='global'):
+    """ Get homolog (eg PGFam) matrix specifying both homologs and genomes. """
+    if Debug:
+        LOG.write("patric_api.getHomologGenomeMatrix() called with {} genomes and {} homologs\n".format(len(genomes), len(homologs)))
+    familyType = 'pgfam_id'
+    if scope == 'local':
+        familyType = 'plfam_id'
+    if not ggpMat: # if an existaing matrix was passed, extend it
         ggpMat = {} # genome-gene-pgfam matrix (really just a dictionary)
-    for row in genomeGenePgfamList:
-        genome, gene, pgfam, role = row
-        if prevMat and pgfam in prevMat and genome in prevMat[pgfam]:
-            continue # don't double-count
+    # consider breaking query up by slices of genomes or homologs or both, if needed
+    query = "in(genome_id,({}))".format(",".join(genomes)) #, "in(product,(%s))"%",".join(roles))
+    query += "&in({},({}))".format(familyType, ",".join(homologs))
+    query += "&select(genome_id,patric_id,{})".format(familyType)
+    query += "&limit(25000)"
+    response = Session.get(Base_url+"genome_feature/", params=query) #, 
+    if Debug:
+        LOG.write("query= %s\n"%response.url)
+    for line in response.text.split("\n")[1:]: # skip first line header
+        line = line.replace('"','')
+        if Debug:
+            LOG.write("row= "+line+"\n")
+        row = line.split("\t")
+        if len(row) != 3:
+            continue
+        genome, gene, pgfam = row
         if pgfam not in ggpMat:
             ggpMat[pgfam] = {}
         if genome not in ggpMat[pgfam]:
@@ -520,7 +497,7 @@ def getGenomeObjectProteins(genomeObject):
             aa_sequence = aa_sequence.replace("J", "X") # because RAxML considers 'J' illegal
         if 'function' in feature:
             product = feature['function']
-        simpleSeq = Seq(aa_sequence, IUPAC.extended_protein)
+        simpleSeq = Seq(aa_sequence) #, IUPAC.extended_protein)
         seqRecord = SeqRecord(simpleSeq, id=patricId, description=product)
         seqRecord.annotations["genome_id"] = genomeId
         retval[patricId] = seqRecord
@@ -548,9 +525,9 @@ def getGenomeObjectGeneDna(genomeObject):
         length = int(float(length))
         if ori == '+':
             start -= 1
-            simpleSeq = Seq(contigSeq[contig][start:start+length], IUPAC.ambiguous_dna)
+            simpleSeq = Seq(contigSeq[contig][start:start+length]) #, IUPAC.ambiguous_dna)
         if ori == '-':
-            simpleSeq = Seq(contigSeq[contig][start-length:start], IUPAC.ambiguous_dna)
+            simpleSeq = Seq(contigSeq[contig][start-length:start]) #, IUPAC.ambiguous_dna)
             simpleSeq = simpleSeq.reverse_complement()
 
         seqRecord = SeqRecord(simpleSeq, id=geneId, description=product)
