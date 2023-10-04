@@ -45,7 +45,7 @@ sub run_codon_tree
 	push(@options, "--threads", $cpu);
     }
     
-    my($genome_ids, $opt_genome_ids, $genome_names) = verify_genome_ids($app, $params);
+    my($genome_ids, $opt_genome_ids, $group_genome_ids, $genome_names) = verify_genome_ids($app, $params);
     
     my $here = getcwd();
     open(F, ">", "$here/genomes.in") or die "Cannot write $here/genomes.in: $!";
@@ -58,6 +58,10 @@ sub run_codon_tree
     
     push(@options, "--genomeIdsFile", "$here/genomes.in");
     #push(@options, "--outgroupIdsFile", "$here/opt_genomes.in");
+
+    if (scalar @{$params->{genome_group}}) {
+        push @options, "--genomeGroup", @{$params->{genome_group}};
+    }
 
     push(@options, "--writePhyloxml");
 
@@ -98,9 +102,8 @@ sub run_codon_tree
     my $ok = 1;
     if (1)
     {
-	$ok = IPC::Run::run([@cmd, @options]);
+        $ok = IPC::Run::run([@cmd, @options]);
     }
-    my $svg_tree;
     
     save_output_files($app, $out_dir);
 }
@@ -112,10 +115,11 @@ sub preflight_cb
 {
     my($app, $app_def, $raw_params, $params) = @_;
 
-    my($genome_ids, $opt_genome_ids) = verify_genome_ids($app, $params);
+    my($genome_ids, $opt_genome_ids, $group_genome_ids) = verify_genome_ids($app, $params);
+    my $num_genomes = scalar(@$genome_ids) + scalar(@$opt_genome_ids) + scalar(@$group_genome_ids);
 
     my $time = int(86400*2.5);
-    if ($params->{bootstraps} <= 100 && $params->{number_of_genes} <= 20 && @$genome_ids < 50)
+    if ($params->{bootstraps} <= 100 && $params->{number_of_genes} <= 20 && $num_genomes < 50)
     {
 	$time = 60 * 60 * 2;
     }
@@ -137,16 +141,25 @@ sub verify_genome_ids
     my $glist = $params->{genome_ids};
     my $opt_glist = $params->{optional_genome_ids};
     $opt_glist = [] unless ref($opt_glist) eq 'ARRAY';
-
-    if (ref($glist) ne 'ARRAY' || @$glist == 0)
-    {
-	die "The CodonTree application requires at least one genome to be specified\n";
+    my $group_glist;
+    my $api = P3DataAPI->new;
+    print("genome group parameter = ", $params->{'genome_group'}, "\n");
+    if (scalar @{$params->{genome_group}}) {
+        for my $group (@{$params->{genome_group}}) {
+            my $group_genome_ids = $api->retrieve_patric_ids_from_genome_group($group);
+            print("for group $group, got genome IDs: ", join(" ", @$group_genome_ids), "\n");
+            push @$group_glist, @$group_genome_ids;
+        }
     }
 
-    my $api = P3DataAPI->new;
-    my $names = $api->genome_name([@$glist, @$opt_glist]);
+    if ((ref($glist) ne 'ARRAY' || @$glist == 0) && (ref($group_glist) ne 'ARRAY' || @$group_glist == 0))
+    {
+	die "The CodonTree application requires at least one genome or genome group to be specified\n";
+    }
 
-    my(@bad, @opt_bad);
+    my $names = $api->genome_name([@$glist, @$opt_glist, @$group_glist]);
+
+    my(@bad, @opt_bad, @group_bad);
     for my $g (@$glist)
     {
 	if (exists($names->{$g}))
@@ -178,11 +191,28 @@ sub verify_genome_ids
     {
 	warn "Cannot find the following optional genomes to process: @opt_bad\n";
     }
-    if (@bad || @opt_bad)
+
+    for my $g (@$group_glist)
+    {
+	if (exists($names->{$g}))
+	{
+	    print "Processing group genome $g $names->{$g}->[0]\n";
+	}
+	else
+	{
+	    push(@group_bad, $g);
+	}
+    }
+    if (@group_bad)
+    {
+	warn "Cannot find the following group genomes to process: @opt_bad\n";
+    }
+
+    if (@bad || @opt_bad || @group_bad)
     {
 	die "CodonTree cannot continue due to missing genome errors\n";
     }
-    return($glist, $opt_glist, $names);
+    return($glist, $opt_glist, $group_glist, $names);
 }
 
 sub save_output_files

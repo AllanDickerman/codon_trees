@@ -59,11 +59,12 @@ def getGenomeIdsNamesByName(name, limit='10'):
 
 def getGenomeGroupIds(genomeGroupName):
     LOG.write("getGenomeGroupIds({}), PatricUser={}, debug={}\n".format(genomeGroupName, PatricUser, Debug))
-    genomeGroupSpecifier = "/"+PatricUser+"/home/Genome Groups/"+genomeGroupName
-    genomeGroupSpecifier = urllib.parse.quote_plus(genomeGroupSpecifier)   #.replace("/", "%2f")
+    #genomeGroupName = "/"+PatricUser+"/home/Genome Groups/"+genomeGroupName
+    genomeGroupSpecifier = urllib.parse.quote_plus(genomeGroupName)   #.replace("/", "%2f")
+    genomeGroupSpecifier = genomeGroupSpecifier.replace('+', '%20')
     query = "in(genome_id,GenomeGroup("+genomeGroupSpecifier+"))"
     query += "&select(genome_id)"
-    query += "&limit(10000)"
+    #query += "&limit(10000)"
     if 1 or Debug:
         LOG.write("debug = {}\n".format(Debug))
         LOG.write("query =  {}\n".format(query))

@@ -26,7 +26,7 @@ parser.add_argument("--parametersJson", metavar="file.json", type=str, help="par
 parser.add_argument("--outputBase", metavar="filebase", type=str, help="base name for output files, def=codontree")
 parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="for output, create if needed")
 parser.add_argument("--genomeIdsFile", metavar="file", type=str, nargs="*", help="file with PATRIC genome IDs, one per line (or first column of TSV)")
-parser.add_argument("--genomeGroupName", metavar="name", type=str, nargs="*", help="name of user's genome group at PATRIC")
+parser.add_argument("--genomeGroup", metavar="name", type=str, nargs="*", help="name of user's genome group at PATRIC")
 parser.add_argument("--genomeObjectFile", metavar="file", type=str, help="genome object (json file)")
 parser.add_argument("--homologIdsFile", metavar="file", type=str, help="use these homologs (eg PGFams), instead of searching for single-copy ones")
 parser.add_argument("--genomePgfamGeneFile", metavar="file", type=str, help="read geneIDs per PGFam per genome from this file")
@@ -80,9 +80,9 @@ if args.parametersJson:
     if "output_file" in params and not args.outputBase:
         args.outputBase = params["output_file"]
     if "genome_group" in params: #not necessary if UI flattens these out to ids
-        if not args.genomeGroupName:
-            args.genomeGroupName = []
-        args.genomeGroupName.extend(params["genome_group"])
+        if not args.genomeGroup:
+            args.genomeGroup = []
+        args.genomeGroup.extend(params["genome_group"])
     if "genome_ids" in params: 
         genomeIds |= set(params["genome_ids"])
     if "optional_genome_ids" in params:
@@ -168,13 +168,14 @@ if args.genomeObjectFile:
 LOG.flush()
 
 groupsPerGenome = None
-if args.genomeGroupName:
+if args.genomeGroup:
     groupsPerGenome = {}
     if not patric_api.PatricUser:
         raise Exception("No patric user is defined, required for using genome group.\n")
-    for groupName in args.genomeGroupName:
-        LOG.write("requesting genome IDs for user group %s\n"%groupName)
-        groupIds = patric_api.getGenomeGroupIdsCLI(groupName)
+    for groupPath in args.genomeGroup:
+        LOG.write("requesting genome IDs for user group %s\n"%groupPath)
+        groupIds = patric_api.getGenomeGroupIds(groupPath)
+        groupName = groupPath.split("/")[-1] # file name with path removed (basename)
         for genomeId in groupIds:
             if genomeId not in groupsPerGenome:
                 groupsPerGenome[genomeId] = []
