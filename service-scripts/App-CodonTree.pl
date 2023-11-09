@@ -59,8 +59,8 @@ sub run_codon_tree
     push(@options, "--genomeIdsFile", "$here/genomes.in");
     #push(@options, "--outgroupIdsFile", "$here/opt_genomes.in");
 
-    if (scalar @{$params->{genome_group}}) {
-        push @options, "--genomeGroup", @{$params->{genome_group}};
+    if (scalar @{$params->{genome_groups}}) {
+        push @options, "--genomeGroup", @{$params->{genome_groups}};
     }
 
     push(@options, "--writePhyloxml");
@@ -144,8 +144,8 @@ sub verify_genome_ids
     my $group_glist;
     my $api = P3DataAPI->new;
     print("genome group parameter = ", $params->{'genome_group'}, "\n");
-    if (scalar @{$params->{genome_group}}) {
-        for my $group (@{$params->{genome_group}}) {
+    if (scalar @{$params->{genome_groups}}) {
+        for my $group (@{$params->{genome_groups}}) {
             my $group_genome_ids = $api->retrieve_patric_ids_from_genome_group($group);
             print("for group $group, got genome IDs: ", join(" ", @$group_genome_ids), "\n");
             push @$group_glist, @$group_genome_ids;
