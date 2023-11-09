@@ -30,7 +30,7 @@
       "default": []
     },
     {
-      "id": "genome_group",
+      "id": "genome_groups",
       "label": "Main genomes",
       "allow_multiple": true,
       "required": 0,
