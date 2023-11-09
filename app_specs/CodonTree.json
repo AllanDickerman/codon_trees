@@ -25,7 +25,15 @@
       "id": "genome_ids",
       "label": "Main genomes",
       "allow_multiple": true,
-      "required": 1,
+      "required": 0,
+      "type": "list",
+      "default": []
+    },
+    {
+      "id": "genome_groups",
+      "label": "Main genomes",
+      "allow_multiple": true,
+      "required": 0,
       "type": "list",
       "default": []
     },

@@ -4,9 +4,10 @@ import subprocess
 import os
 import os.path
 import patric_api
-from random import sample;
+from math import log2
+from random import sample
 #from Bio import BiopythonWarning
-from Bio.Alphabet import IUPAC
+#from Bio.Alphabet import IUPAC
 from Bio import AlignIO
 from Bio import SeqIO
 #from Bio import Alphabet
@@ -27,6 +28,28 @@ except ImportError:
 
 Debug = False #shared across functions defined here
 LOG = sys.stderr
+
+genetic_code_table11 = {
+        "TTT": "F",      "TCT": "S",      "TAT": "Y",      "TGT": "C",  
+        "TTC": "F",      "TCC": "S",      "TAC": "Y",      "TGC": "C",  
+        "TTA": "L",      "TCA": "S",      "TAA": "*",      "TGA": "*",  
+        "TTG": "L",      "TCG": "S",      "TAG": "*",      "TGG": "W",  
+
+        "CTT": "L",      "CCT": "P",      "CAT": "H",      "CGT": "R",  
+        "CTC": "L",      "CCC": "P",      "CAC": "H",      "CGC": "R",  
+        "CTA": "L",      "CCA": "P",      "CAA": "Q",      "CGA": "R",  
+        "CTG": "L",      "CCG": "P",      "CAG": "Q",      "CGG": "R",  
+
+        "ATT": "I",      "ACT": "T",      "AAT": "N",      "AGT": "S",  
+        "ATC": "I",      "ACC": "T",      "AAC": "N",      "AGC": "S",  
+        "ATA": "I",      "ACA": "T",      "AAA": "K",      "AGA": "R",  
+        "ATG": "M",      "ACG": "T",      "AAG": "K",      "AGG": "R",  
+
+        "GTT": "V",      "GCT": "A",      "GAT": "D",      "GGT": "G",  
+        "GTC": "V",      "GCC": "A",      "GAC": "D",      "GGC": "G",  
+        "GTA": "V",      "GCA": "A",      "GAA": "E",      "GGA": "G",  
+        "GTG": "V",      "GCG": "A",      "GAG": "E",      "GGG": "G"
+        }
 
 def which(program):
     """ Can use to test for existence of needed files on path
@@ -267,12 +290,12 @@ def alignSeqRecordsMuscle(seqRecords):
         muscleProcess = subprocess.Popen(['muscle', '-quiet'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     SeqIO.write(seqRecords, muscleProcess.stdin, 'fasta')
     muscleProcess.stdin.close()
-    alphabet=None
-    for s in seqRecords:
-        alphabet=s.seq.alphabet
-        break
+    #alphabet=None
+    #for s in seqRecords:
+    #    alphabet=s.seq.alphabet
+    #    break
     try:
-        alignment = AlignIO.read(muscleProcess.stdout, "fasta", alphabet=alphabet)
+        alignment = AlignIO.read(muscleProcess.stdout, "fasta") #, alphabet=) #alphabet)
         alignment.sort()
     except ValueError as ve:
         alignment = None
@@ -285,13 +308,13 @@ def alignSeqRecordsMafft(seqRecords):
     mafftProcess = subprocess.Popen(['mafft', '--quiet', '--auto', '-'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
     SeqIO.write(seqRecords, mafftProcess.stdin, 'fasta')
     mafftProcess.stdin.close()
-    alphabet=None
-    for s in seqRecords:
-        alphabet=s.seq.alphabet
-        break # only need first one
+    #alphabet=None
+    #for s in seqRecords:
+    #    alphabet=s.seq.alphabet
+    #    break # only need first one
     alignment = None
     try:
-        alignment = AlignIO.read(mafftProcess.stdout, "fasta", alphabet=alphabet)
+        alignment = AlignIO.read(mafftProcess.stdout, "fasta") #, alphabet=alphabet)
         alignment.sort()
     except ValueError as ve:
         alignment = None
@@ -303,32 +326,48 @@ def alignSeqRecordsMafft(seqRecords):
 def calcAlignmentStats(alignment):
     # analyze a BioPython MultipleSeqAlignment object to describe conservation levels
     stats = {'num_pos':0, 'num_seqs':0, 'sum_squared_freq':0, 'mean_squared_freq':0, 'gaps':0, 'prop_gaps':0}
-    stats['num_pos'] = alignment.get_alignment_length()
-    stats['num_seqs'] = len(alignment)
-    if stats['num_pos'] == 0 or stats['num_seqs'] == 0: 
+    num_pos = alignment.get_alignment_length()
+    num_seqs = len(alignment)
+    if num_pos == 0 or num_seqs == 0: 
         return stats
     numGaps = 0
     numNonGaps = 0
     sumSquaredFreq = 0
-    for pos in range(0,stats['num_pos']):
+    perSeqLogP = [0.0] * num_seqs
+    avgEntropy = 0
+    for pos in range(0, num_pos):
         stateCount = {}
         states = alignment[: , pos]
         for residue in states:
             if residue == '-':
                 numGaps += 1
-                continue
-            numNonGaps += 1
+            else:
+                numNonGaps += 1
             if residue not in stateCount:
                 stateCount[residue] = 0
             stateCount[residue] += 1
+        stateFreq = {}
         for residue in stateCount:
-            freq = stateCount[residue]/float(stats['num_seqs'])
-            sumSquaredFreq += freq*freq
+            freq = stateCount[residue]/float(num_seqs)
+            stateFreq[residue] = freq
+            if not residue == '-': # don't let gaps contribute to squared frequency 
+                squaredFreq = freq*freq
+                sumSquaredFreq += squaredFreq
+        if len(stateCount) > 1:    
+            #print("calc per seq mean log(freq)")
+            for i, residue in enumerate(states):
+                if residue in stateFreq:
+                    perSeqLogP[i] += log2(stateFreq[residue])
+    stats['perseq_meanlogfreq'] = {}
+    for i, record in enumerate(alignment):
+        stats['perseq_meanlogfreq'][record.id] = perSeqLogP[i]/num_pos
+            
+    stats['num_pos'] = num_pos
+    stats['num_seqs'] = num_seqs
     stats['sum_squared_freq'] = sumSquaredFreq
-    stats['mean_squared_freq'] = sumSquaredFreq/stats['num_pos']
+    stats['mean_squared_freq'] = sumSquaredFreq/num_pos
     stats['gaps'] = numGaps
-    stats['prop_gaps'] = numGaps/(float(numGaps+numNonGaps))
-    #stats['non_gaps'] = numNonGaps
+    stats['prop_gaps'] = numGaps/float(numGaps+numNonGaps)
     return stats
 
 def suggestAlignmentDeletions(alignment):
@@ -459,7 +498,7 @@ def resolveDuplicatesPerPatricGenome(alignment):
         reducedSeqs = []
         for record in alignment:
             if record.id in seqIds:
-                record.seq = Seq(str(record.seq).replace('-', ''), record.seq.alphabet) # remove gaps
+                record.seq = Seq(str(record.seq).replace('-', '')) #, record.seq.alphabet) # remove gaps
                 reducedSeqs.append(record)
         alignment = alignSeqRecordsMuscle(reducedSeqs)
     return alignment
@@ -473,7 +512,7 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
     #if Debug:
     #     LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
 
-    dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO(dnaFasta), "fasta", alphabet=IUPAC.IUPACAmbiguousDNA()))
+    dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO(dnaFasta), "fasta")) #, alphabet=IUPAC.IUPACAmbiguousDNA()))
     for seqId in protSeqDict:
         if extraDnaSeqs and seqId in extraDnaSeqs:
             dnaSeqDict[seqId] = extraDnaSeqs[seqId]
@@ -491,17 +530,21 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
         protSeq = protSeqDict[seqId].seq
         dnaAlignFasta.write(">"+seqId+"\n")
         dnaSeqPos = 0
+        codon_to_aa_mismatch = 0
         for protPos in range(0, len(protSeq)):
             if protSeq[protPos] == '-':
                 codon = '---'
             else:
-                #  TODO: in future use a codon table to check correct matching 
-                codon = str(dnaSeq[dnaSeqPos:dnaSeqPos+3])
+                codon = str(dnaSeq[dnaSeqPos:dnaSeqPos+3]).upper()
                 dnaSeqPos += 3
+                # check whether codon codes for amino acid
+                if genetic_code_table11[codon] != protSeq[protPos]:
+                    codon_to_aa_mismatch += 1
+                    LOG.write(" aa to codon mismatch at protpos {} in {}, codon is {} => {}\n".format(protPos, seqId, codon, genetic_code_table11[codon]))
             dnaAlignFasta.write(codon)
         protPos += 1 # should now be equal to prot_align_len
         if Debug:
-            LOG.write(seqId+" protPos={0}, dnaSeqPos={1}, orig_DNA_len={2}, orig_prot_len={3}\n".format(protPos, dnaSeqPos, len(dnaSeq), len(protSeq)))
+            LOG.write(seqId+"\tprotPos={}\torig_prot={}\tdnaPos={}\torig_DNA={}\tgcmisses={}\n".format(protPos, len(protSeq), dnaSeqPos, len(dnaSeq), codon_to_aa_mismatch))
         if protPos < prot_align_len:
             dnaAlignFasta.write(''.join("---"*(prot_align_len - protPos)))
             LOG.write("padding short seq {0}, of {1} pos out to {2}, orig_DNA_len={3}, orig_prot_len={4}\n".format(seqId, protPos, prot_align_len, len(dnaSeq), len(protSeq)))
@@ -518,7 +561,7 @@ def proteinToCodonAlignment(proteinAlignment, extraDnaSeqs = None):
     #if Debug:
     #     LOG.write("dnaFasta sample: %s\n"%dnaFasta[:100])
 
-    dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO(dnaFasta), "fasta", alphabet=IUPAC.IUPACAmbiguousDNA()))
+    dnaSeqDict = SeqIO.to_dict(SeqIO.parse(StringIO(dnaFasta), "fasta")) #, alphabet=IUPAC.IUPACAmbiguousDNA()))
     for seqId in protSeqDict:
         if extraDnaSeqs and seqId in extraDnaSeqs:
             dnaSeqDict[seqId] = extraDnaSeqs[seqId]
@@ -606,6 +649,8 @@ def writeOneAlignmentPhylip(alignment, destination, idList, outputIds=True):
     seqDict = {}
     for record in alignment:
         seqDict[record.id] = record.seq
+    if not outputIds:
+        destination.write("\n")
     for seqid in idList:
         if outputIds:
             destination.write("{:{width}}  ".format(seqid, width = nameFieldWidth))
@@ -627,7 +672,7 @@ def writeConcatenatedAlignmentsPhylip(alignments, destination):
     alignmentIdList = sorted(alignments)
     writeOneAlignmentPhylip(alignments[alignmentIdList[0]], destination, taxonIdList, outputIds=True)
     for alignmentId in alignmentIdList[1:]:
-        destination.write("\n")
+        writeOneAlignmentPhylip(alignments[alignmentId], destination, taxonIdList, outputIds=False)
 
 def sample_and_concatenate_alignments(alignments, sample_prop=1.0):
 # alignments is dictionary of Bio.multipleSeqAlignments
@@ -663,7 +708,7 @@ def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
     if len(codonAlignments) == 0:
         LOG.write("outputCodonsProteinsPhylip() called with zero codonAlignments()\n")
         return
-    if type(destination) == str or type(destination) == unicode:
+    if type(destination) == str: # or type(destination) == unicode:
         if Debug:
             LOG.write("outputCodonsProteinsPhylip opening file %s\n"%destination)
         destination = open(destination, "w")
@@ -684,10 +729,8 @@ def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
     alignmentIdList = sorted(codonAlignments)
     writeOneAlignmentPhylip(codonAlignments[alignmentIdList[0]], destination, taxonIdList, outputIds=True)
     for alignmentId in alignmentIdList[1:]:
-        destination.write("\n")
         writeOneAlignmentPhylip(codonAlignments[alignmentId], destination, taxonIdList, outputIds=False)
     for alignmentId in sorted(proteinAlignments):
-        destination.write("\n")
         writeOneAlignmentPhylip(proteinAlignments[alignmentId], destination, taxonIdList, outputIds=False)
     destination.write("\n")
     destination.close()
