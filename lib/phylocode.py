@@ -538,7 +538,7 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
                 codon = str(dnaSeq[dnaSeqPos:dnaSeqPos+3]).upper()
                 dnaSeqPos += 3
                 # check whether codon codes for amino acid
-                if genetic_code_table11[codon] != protSeq[protPos]:
+                if Debug & (codon in genetic_code_table11) & (genetic_code_table11[codon] != protSeq[protPos]):
                     codon_to_aa_mismatch += 1
                     LOG.write(" aa to codon mismatch at protpos {} in {}, codon is {} => {}\n".format(protPos, seqId, codon, genetic_code_table11[codon]))
             dnaAlignFasta.write(codon)
