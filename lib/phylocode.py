@@ -4,7 +4,7 @@ import subprocess
 import os
 import os.path
 import patric_api
-from math import log2
+from math import log
 from random import sample
 #from Bio import BiopythonWarning
 #from Bio.Alphabet import IUPAC
@@ -357,7 +357,7 @@ def calcAlignmentStats(alignment):
             #print("calc per seq mean log(freq)")
             for i, residue in enumerate(states):
                 if residue in stateFreq:
-                    perSeqLogP[i] += log2(stateFreq[residue])
+                    perSeqLogP[i] += log(stateFreq[residue], 2) #log base 2
     stats['perseq_meanlogfreq'] = {}
     for i, record in enumerate(alignment):
         stats['perseq_meanlogfreq'][record.id] = perSeqLogP[i]/num_pos

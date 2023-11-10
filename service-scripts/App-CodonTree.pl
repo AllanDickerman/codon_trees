@@ -141,9 +141,9 @@ sub verify_genome_ids
     my $glist = $params->{genome_ids};
     my $opt_glist = $params->{optional_genome_ids};
     $opt_glist = [] unless ref($opt_glist) eq 'ARRAY';
-    my $group_glist;
+    my $group_glist = [];
     my $api = P3DataAPI->new;
-    print("genome group parameter = ", $params->{'genome_group'}, "\n");
+    print("genome group parameter = ", $params->{'genome_groups'}, "\n");
     if (scalar @{$params->{genome_groups}}) {
         for my $group (@{$params->{genome_groups}}) {
             my $group_genome_ids = $api->retrieve_patric_ids_from_genome_group($group);
