@@ -736,7 +736,7 @@ if len(proteinAlignments) and not args.deferRaxml:
                 command.extend(("-g", args.phyloxmlFields))
             if groupsPerGenome:
                 with open("groupsPerGenome.tsv", "w") as F:
-                    F.write("genomeId\tGroup\n")
+                    F.write("genomeId\tGenome_Group\n")
                     for genomeId in groupsPerGenome:
                         F.write("{}\t{}\n".format(genomeId, ",".join(groupsPerGenome[genomeId])))
                 command.extend(["--annotationtsv", "groupsPerGenome.tsv"])
