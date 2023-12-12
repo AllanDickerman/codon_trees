@@ -55,7 +55,7 @@ parser.add_argument("--writePgfamAlignmentsDNA", action='store_true', help="writ
 parser.add_argument("--writePgfamMatrix", type=float, help="write table of gene_id per homolog per genome (present in > proportion of genomes)")
 parser.add_argument("--writePgfamCountMatrix", type=float, help="write table of counts per homolog per genome (present in > proportion of genomes)")
 parser.add_argument("--writePhyloxml", action='store_true', help="write tree in phyloxml format")
-parser.add_argument("--phyloxmlFields", type=str, default='genome_name,species,strain,isolation_country,host_common_name,collection_year', metavar='data fields', help="comma-sparated genome fields for phyloxml")
+parser.add_argument("--phyloxmlFields", type=str, metavar='data fields', help="comma-sparated genome fields for phyloxml")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="not needed if figtree executable on path")
 parser.add_argument("--universalRolesFile", type=str, metavar="path", help="path to file with universal roles to select conserved genes")
 parser.add_argument("--focusGenome", metavar="id", type=str, help="to be highlighted in color in Figtree")

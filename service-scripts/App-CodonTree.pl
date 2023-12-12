@@ -93,9 +93,16 @@ sub run_codon_tree
 	 '--bootstrapReps', $bootstraps,
 	 '--maxGenomesMissing', $max_missing,
 	 '--maxAllowedDups', $max_allowed_dups,
-	 #     '--debugMode',
 	 '--raxmlExecutable', $raxml,
 	 '--outputDirectory', $out_dir);
+
+    if ($params->{genome_metadata_fields}) {
+        push @options, ['--phyloxmlFields', join(',', @{$params->{genome_metadata_fields}})];
+    }
+
+    if ($params->{debug}) {
+        push(@options, '--debugMode');
+    }
     
     print Dumper(\@cmd, \@options);
     
