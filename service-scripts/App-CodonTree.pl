@@ -97,7 +97,7 @@ sub run_codon_tree
 	 '--outputDirectory', $out_dir);
 
     if ($params->{genome_metadata_fields}) {
-        push @options, ['--phyloxmlFields', join(',', @{$params->{genome_metadata_fields}})];
+        push @options, '--phyloxmlFields', join(',', @{$params->{genome_metadata_fields}});
     }
 
     if ($params->{debug}) {
