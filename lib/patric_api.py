@@ -69,7 +69,7 @@ def getGenomeGroupIds(genomeGroupName):
     genomeGroupSpecifier = genomeGroupSpecifier.replace('+', '%20')
     query = "in(genome_id,GenomeGroup("+genomeGroupSpecifier+"))"
     query += "&select(genome_id)"
-    #query += "&limit(10000)"
+    query += "&limit(10000)"
     if 1 or Debug:
         LOG.write("debug = {}\n".format(Debug))
         LOG.write("query =  {}\n".format(query))
