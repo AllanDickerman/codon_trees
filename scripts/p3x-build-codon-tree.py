@@ -374,7 +374,10 @@ for homologId in singleCopyHomologs:
         proteinAlignments[homologId] = proteinAlignment
         alignmentStats = phylocode.calcAlignmentStats(proteinAlignment)
         # dividing by sqrt(alignment length) yields result intermediate between sum_squared_freq and mean_squared_freq (where squared_freq is the within-column sum of squared state (letter, amino acid) frequency
-        alignmentScore[homologId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
+        if alignmentStats['num_pos']:
+            alignmentScore[homologId] = alignmentStats['sum_squared_freq'] / sqrt(alignmentStats['num_pos'])
+        else:
+            alignmentScore[homologId] = 0
         for figId in alignmentStats['perseq_meanlogfreq']:
             genomeId = genomeIdFromFigId(figId)
             perGenomeLogFreq[genomeId] += alignmentStats['perseq_meanlogfreq'][figId]
@@ -386,7 +389,8 @@ LOG.write("Protein alignments completed. Number = %d, time = %.1f\n"%(len(protei
 
 # normalize perGenomeLogFreq by how many alignments there were per genome
 for genomeId in perGenomeLogFreq:
-    perGenomeLogFreq[genomeId] /= genomeAlignmentCount[genomeId]
+    if genomeAlignmentCount[genomeId]:
+        perGenomeLogFreq[genomeId] /= genomeAlignmentCount[genomeId]
 
 F = open("alignment_perseq_meanlogfreq.txt", "w")
 F.write("PGFam\tgenome\tfigtail\tgenome_mean\tgene_lf\tscore\n")
