@@ -409,7 +409,7 @@ for homologId in proteinAlignmentStats:
             if 'bad_seqs' not in proteinAlignmentStats[homologId]:
                 alignmentStats['bad_seqs'] = {}
             alignmentStats['bad_seqs'][genomeId] = badSeqScore
-            LOG.write("homolog {} has badSed {} scoring {} relative to mean {}\n".format(homologId, figId, badSeqScore, perGenomeLogFreq[genomeId]))
+            LOG.write("homolog {} has bad sequence {} scoring {} relative to mean {}\n".format(homologId, figId, badSeqScore, perGenomeLogFreq[genomeId]))
     alignmentStats['worstSeqScore'] = worstScore
 F.close()
 
