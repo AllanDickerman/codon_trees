@@ -536,6 +536,9 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
                 codon = '---'
             else:
                 codon = str(dnaSeq[dnaSeqPos:dnaSeqPos+3]).upper()
+                if len(codon) != 3:
+                    LOG.write(" failed to get full codon for {} at aa-pos {} of {}\n".format(seqId, protPos, prot_align_len))
+                    codon = '---'
                 dnaSeqPos += 3
                 # check whether codon codes for amino acid
                 if Debug and (codon in genetic_code_table11):
@@ -549,6 +552,7 @@ def gapCdsToProteins(proteinAlignment, extraDnaSeqs=None):
         if protPos < prot_align_len:
             dnaAlignFasta.write(''.join("---"*(prot_align_len - protPos)))
             LOG.write("padding short seq {0}, of {1} pos out to {2}, orig_DNA_len={3}, orig_prot_len={4}\n".format(seqId, protPos, prot_align_len, len(dnaSeq), len(protSeq)))
+        
         dnaAlignFasta.write("\n")
     dnaAlignFasta_text = dnaAlignFasta.getvalue()
     retval = AlignIO.read(StringIO(dnaAlignFasta_text), 'fasta')
