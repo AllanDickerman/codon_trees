@@ -18,6 +18,7 @@ This module provides the following application specfication(s):
 
 ## See also
 
+* [Phylogenetic Tree Service Quick Reference](https://www.bv-brc.org/docs/quick_references/services/phylogenetic_tree_building_service.html)
 * [Phylogenetic Tree Service](https://www.bv-brc.org/docs/https://bv-brc.org/app/PhylogeneticTree.html)
 * [Phylogenetic Tree Service Tutorial](https://www.bv-brc.org/docs//tutorial/phylogenetic_tree/phylogenetic_tree.html)
 * [Phylogeny Tab Quick Reference Guide](https://www.bv-brc.org/docs//quick_references/organisms_taxon/phylogeny.html)
