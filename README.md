@@ -4,25 +4,24 @@
 
 The bacterial Phylogenetic Tree Service enables construction of custom phylogenetic trees built from user-selected genomes. 
 The **Codon Tree** method selects single-copy BV-BRC PGFams and analyzes aligned proteins and coding DNA from single-copy genes using the program RAxML. 
-The resulting tree is combined with user-specified metadata on each genome into a phyloxml file which can be viewed in the Archaeopteryx viewer from the user's BV-BRC workspace.
-Alternatively, the Newick version of the file can be downloaded and viewed in FigTree or other software.
 
 Given a list of genome IDs, it will analyse the distribution of homology groups (PGFams) among genomes and select gene families that are single-copy (or within user-specified limits of allowed duplications and absences).
 In the case of multiple gene copies in a single genome, when allowed by the the duplication tolerance parameter, a single one is selected based on highest similarity to the other genes in the alignment.
 
+It will align the protein sequences for single-copy genes using the program mafft and score the alignment for quality. Having evaluated an excess of genes (if available) it will sort the alignments by score and select the requested number of genes favoring the highest alignment scores.
 The target number of genes can be specified to limit the run times. Good performance can be achieved with 10 to 20 genes. Resolving close relationships may benefit from requesting 100 or more genes.
 
-It will align the protein sequences for single-copy genes using the program mafft and score the alignment for quality. Having evaluated an excess of genes (if available) it will sort the alignments by score and select the requested number of genes favoring the highest alignment scores.
-
 It will then align the DNA sequences to the protein alignments, 3 nucleotides per amino acid, yielding nucleotide sequences aligned on a per-codon basis.
-
 After aligning codons to proteins, protein alignments are end-trimmed to a user-specified occupancy threshold. Any end positions which have more gaps than this are trimmed. Nucleotide alignments are end-trimmed to match.
 
-The protein and codon alignments are concatenated into a large data matrix for phylogenetic analysis by RAxML, allowing different rates for the amino acids and 1st, 2nd, and 3rd codon positions.
-
-A random sample of the aligned proteins is analyzed by RAxML's exhaustive search for the best model of protein substitution, which is then used for the final analysis.
-
+The protein and codon alignments are concatenated into a large data matrix for phylogenetic analysis by RAxML, allowing different rates for the amino acids and 1st, 2nd, and 3rd codon positions using the GTR rate model.
+An optimal protein substitution model is searched for by RAxML on a sample of the protein alignment columns.
 The 'fast bootstrapping' option of RAxML is used to derive support values on the tree.
+
+The resulting tree is combined with user-specified metadata on each genome into a phyloxml file which can be viewed in the Archaeopteryx viewer from the user's BV-BRC workspace.
+Alternatively, the Newick version of the file can be downloaded and viewed in FigTree or other software.
+
+A report document is provided describing the genomes, genes and methods used to build the tree. In cases where fewer than the requested number of single-copy genes was available, suggestions are presented as to which genomes could be dropped from the analysis to yield more single-copy genes.
 
 ## About this module
 
