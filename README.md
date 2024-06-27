@@ -43,5 +43,15 @@ This module provides the following application specfication(s):
 
 
 ## References
+1. Davis, J.J., et al., PATtyFams: Protein families for the microbial genomes in the PATRIC database. 2016. 7: p. 118.
 
+2. Han, M.V.; Zmasek, C.M. (2009). "phyloXML: XML for evolutionary biology and comparative genomics". BMC Bioinformatics. 10: 356. doi:10.1186/1471-2105-10-356. PMC 2774328. PMID 19860910
+
+3. Katoh K, Standley DM. MAFFT multiple sequence alignment software version 7: improvements in performance and usability. Mol Biol Evol. 2013 Apr;30(4):772-80. doi: 10.1093/molbev/mst010. 
+
+4. Stamatakis, A., RAxML version 8: a tool for phylogenetic analysis and post-analysis of large phylogenies. Bioinformatics, 2014. 30(9): p. 1312-1313.
+
+5. Stamatakis, A., P. Hoover, and J. Rougemont, A rapid bootstrap algorithm for the RAxML web servers. Systematic biology, 2008. 57(5): p. 758-771.
+
+6. Zmasek, Christian M.; Eddy, Sean R. (2001). "ATV: display and manipulation of annotated phylogenetic trees". Bioinformatics. 17 (4): 383–384. doi:10.1093/bioinformatics/17.4.383. PMID 11301314
 
