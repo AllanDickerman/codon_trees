@@ -1,6 +1,7 @@
 import sys
 import re
 from math import sqrt
+import os
 import os.path
 import glob
 import argparse
@@ -148,9 +149,9 @@ def authenticate():
             LOG.write("authorization file %s not found\n"%tokenFile)
     LOG.write("Patric User = %s\n"%patric_api.PatricUser)
 
-preflightTests = []
-preflightTests.append(("phylocode.which(args.raxmlExecutable) != None", phylocode.which(args.raxmlExecutable) != None))
-preflightTests.append(("phylocode.which('muscle') != None", phylocode.which('muscle') != None))
+environmentTests = []
+environmentTests.append(("phylocode.which(args.raxmlExecutable) != None", phylocode.which(args.raxmlExecutable) != None))
+environmentTests.append(("phylocode.which({}) != None".format(args.aligner), phylocode.which(args.aligner) != None))
 
 authenticate()
 
@@ -286,11 +287,11 @@ genomeIds -= deletedGenomes
 LOG.write("got homologs for genomes, len=%d\n"%len(homologMatrix))
 LOG.flush()
 
-preflightTests.append(("Need at least 4 genomes to build a tree", len(genomeIds) + len(optionalGenomeIds) >= 4))
+environmentTests.append(("Need at least 4 genomes to build a tree", len(genomeIds) + len(optionalGenomeIds) >= 4))
 
 if args.maxGenomesMissing:
     LOG.write("allowing %d genomes missing per PGfam (out of %d total)\n"%(args.maxGenomesMissing, len(genomeIds)))
-preflightTests.append(("Num genomes - maxGenomesMissing >= 4", len(genomeIds) - args.maxGenomesMissing >= 4))
+environmentTests.append(("Num genomes - maxGenomesMissing >= 4", len(genomeIds) - args.maxGenomesMissing >= 4))
 
 # call to getSingleCopyHomologs uses main genome, optional genomes are not involved in selecting single copy homologs
 singleCopyHomologs = phylocode.selectSingleCopyHomologs(homologMatrix, genomeIds, requiredGenome=args.focusGenome, maxGenomesMissing=args.maxGenomesMissing, maxAllowedDups=args.maxAllowedDups)
@@ -307,7 +308,7 @@ for homolog in singleCopyHomologs:
 filesToMoveToDetailsFolder =  []
 filesToDelete = []
 
-preflightTests.append(("single copy homologs > 0", len(singleCopyHomologs) > 0))
+environmentTests.append(("single copy homologs > 0", len(singleCopyHomologs) > 0))
 ## perform preflight test
 
 maxGenesWithExcess = int(args.maxGenes * (1+args.excessGenesProp) + args.excessGenesFixed)
@@ -445,7 +446,7 @@ with open(genesPerGenomeFile, 'w') as F:
 
 passed = True
 LOG.write("Initial checks of environment:\n")
-for test in preflightTests:
+for test in environmentTests:
     passed &= test[1]
     LOG.write(test[0] + "\t" + str(test[1]) + "\n")
 LOG.write("All tests passed\t"+str(passed)+"\n")
@@ -544,7 +545,7 @@ if len(proteinAlignments):
     with open(alignmentStatsFile, "w") as F:
         #first = True
         keystats = ['gaps', 'sum_squared_freq', 'mean_squared_freq', 'num_pos', 'num_seqs', 'worstSeqScore']
-        F.write("PGFam\t"+"\t".join(keystats)+"\n")
+        F.write("PGFam\t"+"\t".join(keystats)+"used_in_tree\n")
         for homolog in sorted(alignmentScore, key=alignmentScore.get, reverse=True): #proteinAlignments:
             stats = proteinAlignmentStats[homolog]
             #if first:
@@ -715,6 +716,24 @@ if len(proteinAlignments) and not args.deferRaxml:
         program_return_value = 1 # return this to signal no tree was generated == failure
     else:
         program_return_value = 0 # means success
+        # generate rooted or balanced tree
+        LOG.write("rootTree({})\n".format(raxmlNewickFileName))
+        output_suffix = phyloFileBase + "_rooted"
+        raxmlCommand = [args.raxmlExecutable, '-t', raxmlNewickFileName, '-f', 'I', '-m', 'GTRCAT', '-n', output_suffix] 
+        LOG.write("command:\n{}\n".format(" ".join(raxmlCommand)))
+        raxml_command_lines.append(" ".join(raxmlCommand))
+        raxml_analysis_goal.append("Root the tree by RAxML 'balance' metric (like mid-point rooting).")
+        proc_start_time = time()
+        result_code = subprocess.call(raxmlCommand, shell=False) #/, stdout=LOG, stderr=LOG)
+        raxml_process_time.append(time() - proc_start_time)
+        subprocess.run(raxmlCommand)
+        if os.path.exists("RAxML_rootedTree."+output_suffix):
+            os.rename("RAxML_rootedTree."+output_suffix, phyloFileBase + "_tree_rooted.nwk")
+            filesToMoveToDetailsFolder.append(phyloFileBase + "_tree_rooted.nwk")
+            LOG.write("rename {} to {}\n".format("RAxML_rootedTree."+output_suffix, phyloFileBase + "_rooted_tree.nwk"))
+        else:
+            LOG.write("generating balanced tree failed\n")
+
         F = open(raxmlNewickFileName)
         originalNewick = F.read()
         F.close()
@@ -729,9 +748,9 @@ if len(proteinAlignments) and not args.deferRaxml:
         F = open(renamedNewickFile, 'w')
         F.write(renamedNewick)
         F.close()
-
         LOG.write("codonTree newick relabeled with genome names written to "+renamedNewickFile+"\n")
         LOG.flush()
+
 
         if args.writePhyloxml and treeWithGenomeIdsFile:
             LOG.write("writePhyloxml\n")
@@ -744,6 +763,7 @@ if len(proteinAlignments) and not args.deferRaxml:
                     for genomeId in groupsPerGenome:
                         F.write("{}\t{}\n".format(genomeId, ",".join(groupsPerGenome[genomeId])))
                 command.extend(["--annotationtsv", "groupsPerGenome.tsv"])
+                filesToMoveToDetailsFolder.append("groupsPerGenome.tsv")
             command.append(treeWithGenomeIdsFile)
             if args.debugMode:
                 sys.stderr.write("calling p3x-newick-to-phyloxml, command line:\n"+" ".join(command)+"\n")
@@ -753,7 +773,7 @@ if len(proteinAlignments) and not args.deferRaxml:
 
         figtree_found = phylocode.checkCommandline("figtree")
         if figtree_found or (args.pathToFigtreeJar and os.path.exists(args.pathToFigtreeJar)):
-            nexusFilesWritten = phylocode.generateNexusFile(originalNewick, phyloFileBase, nexus_template = None, align_tips = "both", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
+            nexusFilesWritten = phylocode.generateNexusFile(originalNewick, phyloFileBase, nexus_template = None, align_tips = "no", focus_genome = args.focusGenome, genomeIdToName=genomeIdToName)
             LOG.write("nexus file written to %s\n"%(", ".join(nexusFilesWritten)))
             filesToMoveToDetailsFolder.append(nexusFilesWritten[0])
             if len(nexusFilesWritten) > 1:
@@ -769,6 +789,7 @@ if len(proteinAlignments) and not args.deferRaxml:
                     if imageFormat == "SVG" and not svgTreeImage:
                         svgTreeImage = imageFile
                         LOG.write("svg image for report: {}\n".format(imageFile))
+                        filesToMoveToDetailsFolder.append(svgTreeImage)
                 else:
                     LOG.write("image file {} does not exist.\n".format(imageFile))
 
@@ -964,7 +985,7 @@ for fn in filesToMoveToDetailsFolder:
         LOG.write("tried to move {} to detailsDirectory, but not found.\n".format(fn))
 LOG.write("files moved: %d\n"%numMoved)
 filesToDelete.extend(glob.glob("RAxML*"))
-if not args.debugMode:
+if args.debugMode:
     numDeleted = 0
     for fn in filesToDelete:
         os.remove(fn)
