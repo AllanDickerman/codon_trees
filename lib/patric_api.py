@@ -379,7 +379,7 @@ def getHomologGenomeMatrix(genomes, homologs, ggpMat=None, scope='global'):
         ggpMat[pgfam][genome].add(gene)
     return ggpMat
 
-def write_homolog_gene_matrix(ggpMat, fileHandle, minProp=0):
+def write_homolog_gene_matrix(ggpMat, fileHandle, minGenomes=0):
     """ write out homologGeneMatrix to file handle 
     data is list of genes per homolog per genome
     rows are homologs
@@ -394,9 +394,9 @@ def write_homolog_gene_matrix(ggpMat, fileHandle, minProp=0):
     for homolog in ggpMat:
         genomeSet.update(set(ggpMat[homolog].keys()))
     genomes = sorted(genomeSet)
-    min_genomes_required =  minProp
-    if minProp < 1:
-        min_genomes_required = minProp * len(genomes)
+    min_genomes_required =  minGenomes
+    if minGenomes < 1:
+        min_genomes_required = minGenomes * len(genomes)
     fileHandle.write("PGFam\t"+"\t".join(genomes)+"\n")
     for homolog in ggpMat:
         if len(ggpMat[homolog]) >= min_genomes_required:
@@ -408,7 +408,7 @@ def write_homolog_gene_matrix(ggpMat, fileHandle, minProp=0):
                 fileHandle.write("\t"+gene)
             fileHandle.write("\n")
 
-def write_homolog_count_matrix(ggpMat, fileHandle, minProp=0):
+def write_homolog_count_matrix(ggpMat, fileHandle, minGenomes=0):
     """ write out matrix of counts per homolog per genome to file handle 
     data is count of genes per homolog per genome (integers)
     rows are homologs
@@ -422,9 +422,9 @@ def write_homolog_count_matrix(ggpMat, fileHandle, minProp=0):
     for homolog in ggpMat:
         genomeSet.update(set(ggpMat[homolog].keys()))
     genomes = sorted(genomeSet)
-    min_genomes_required =  minProp
-    if minProp < 1:
-        min_genomes_required = minProp * len(genomes)
+    min_genomes_required =  minGenomes
+    if minGenomes < 1:
+        min_genomes_required = minGenomes * len(genomes)
     fileHandle.write("PGFam\t"+"\t".join(genomes)+"\n")
     for homolog in ggpMat:
         if len(ggpMat[homolog]) >= min_genomes_required:

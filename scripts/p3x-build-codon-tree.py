@@ -36,7 +36,7 @@ parser.add_argument("--homologScope", metavar="global/local", choices=['global',
 parser.add_argument("--maxGenes", metavar="#", type=int, default=50, help="number of genes in concatenated alignment")
 parser.add_argument("--excessGenesProp", metavar="prop", type=float, default=0.5, help="multiplier of maxGenes to add to filter out low-scoring alignments")
 parser.add_argument("--excessGenesFixed", metavar="#", type=int, default=20, help="fixed excess genes to add to filter out low-scoring alignments")
-parser.add_argument("--bootstrapReps", metavar="#", type=int, help="number of raxml 'fast boostrap' replicates")
+parser.add_argument("--bootstrapReps", metavar="#", type=int, default=0, help="number of raxml 'fast boostrap' replicates")
 parser.add_argument("--maxGenomesMissing", metavar="#", type=int, default=0, help="genomes allowed to lack a member of any homolog group")
 parser.add_argument("--maxAllowedDups", metavar="#", type=int, default=0, help="duplicated gene occurrences allowed within homolog group")
 
@@ -47,14 +47,15 @@ parser.add_argument("--rateModel", metavar="model", type=str, choices = ['CAT', 
 parser.add_argument("--proteinModel", metavar="model", type=str, default="AUTO", help="raxml protein substitution model")
 parser.add_argument("--protein_sample_prop", metavar="0.XX", type=float, default=0.5, help="proportion of positions to sample for discovery of optimal model")
 parser.add_argument("--analyzeCodons", action='store_true', help="analyze only codon nucleotides")
+parser.add_argument("--analyzePos3Codons", action='store_true', help="analyze codon-position 3 nucleotides in addition")
 parser.add_argument("--analyzeProteins", action='store_true', help="analyze only amino acids")
 parser.add_argument("--threads", "-t", metavar="T", type=int, default=2, help="threads for raxml")
 parser.add_argument("--deferRaxml", action='store_true', help="does not run raxml")
 parser.add_argument("--exitBeforeAlignment", action='store_true', help="Don't align, useful for getting PGFam matrix")
 parser.add_argument("--writePgfamAlignments", action='store_true', help="write fasta alignment per homolog used for tree")
 parser.add_argument("--writePgfamAlignmentsDNA", action='store_true', help="write fasta alignment per homolog used for tree")
-parser.add_argument("--writePgfamMatrix", type=float, help="write table of gene_id per homolog per genome (present in > proportion of genomes)")
-parser.add_argument("--writePgfamCountMatrix", type=float, help="write table of counts per homolog per genome (present in > proportion of genomes)")
+parser.add_argument("--writePgfamMatrix", type=float, help="write table of gene_id per homolog per genome present in > proportion of genomes or number of genomes (if > 1.0)")
+parser.add_argument("--writePgfamCountMatrix", type=float, help="write table of counts per homolog per genome present in > proportion of genomes or number of genomes if > 1.0)")
 parser.add_argument("--writePhyloxml", action='store_true', help="write tree in phyloxml format")
 parser.add_argument("--phyloxmlFields", type=str, metavar='data fields', help="comma-sparated genome fields for phyloxml")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="not needed if figtree executable on path")
@@ -595,7 +596,7 @@ if len(proteinAlignments):
         for seq_id in sorted(sampled_prots):
             F.write(">"+seq_id+"\n"+sampled_prots[seq_id]+"\n")
         F.close()
-        raxmlCommand = [args.raxmlExecutable, "-s", proteinAlignmentFile, "-n", proteinFileBase, "-m", "PROTCATAUTO", "-p", "12345", "-T", str(args.threads), '-e', '10']
+        raxmlCommand = [args.raxmlExecutable, "-s", proteinAlignmentFile, "-n", proteinFileBase, "-m", "PROTGAMMAAUTO", "-p", "12345", "-T", str(args.threads), '-e', '10']
         LOG.write("command = "+" ".join(raxmlCommand)+"\n")
         raxml_command_lines.append(" ".join(raxmlCommand))
         raxml_analysis_goal.append("Analyze proteins with model 'AUTO' to find best substitution model.")
@@ -614,10 +615,17 @@ if len(proteinAlignments):
             filesToMoveToDetailsFolder.append("RAxML_info."+proteinFileBase)
             F = open("RAxML_info."+proteinFileBase)
             bestModel = None
+            bestScore = 0
+            empiricalFrequencies
             for line in F:
-                m = re.match(r"\s+Partition: 0 best-scoring AA model:\s+(\S+)", line)
+                m = re.match(r"\s+Partition: 0 best-scoring AA model: (\S+) likelihood (\S+)", line)
                 if m:
-                    bestModel = m.group(1)
+                    score = float(m.group(2))
+                    if score < bestScore:
+                        bestScore = score
+                        bestModel = m.group(1)
+                        if "empirical base frequencies" in line:
+                            bestModel += "F" #add 'F' to model name to indicate use empirical base [sic] frequencies
             if bestModel:
                 protein_substitution_model = bestModel
                 LOG.write("Analysis of proteins found best model: "+bestModel+"\n")
@@ -658,6 +666,18 @@ if len(proteinAlignments):
         phylocode.writeConcatenatedAlignmentsPhylip(proteinAlignments, alignmentFile)
         raxmlCommand = [args.raxmlExecutable, "-s", alignmentFile, "-n", phyloFileBase, "-m",  "PROT%s%s"%(rate_model, protein_substitution_model), "-p", "12345", "-T", str(args.threads)]
     #raxmlCommand.extend(["-e", "0.1"]) #limit on precision, faster than default 0.1
+
+    if args.analyzePos3Codons:
+        # write 3rd codon position columns to phylip file
+        #codonPos3_alignmentFile = phyloFileBase+"_codonPos3.phy"
+        codonPos3_alignmentFile = phyloFileBase+"_codonPos3.afa"
+        filesToMoveToDetailsFolder.append(codonPos3_alignmentFile)
+        F = open(codonPos3_alignmentFile, "w")
+        seqDict = phylocode.concatenate_codons_proteins(codonAlignments, [], codonPos=3)
+        for seqId in seqDict:
+            F.write(">"+seqId+"\n"+seqDict[seqId]+"\n")
+        F.close()
+        #phylocode.writeCodonPos3ConcatenatedAlignmentsPhylip(codonAlignments, codonPos3_alignmentFile)
 
     if args.bootstrapReps > 0:
         raxmlCommand.extend(["-f", "a", "-x", "12345", "-N", str(args.bootstrapReps)]) 

@@ -642,7 +642,7 @@ def trimAlignments(alignmentDict, endGapTrimThreshold=0.5):
         alignmentDict[alignmentId] = trimEndGaps(alignmentDict[alignmentId], endGapTrimThreshold)
     return
 
-def writeOneAlignmentPhylip(alignment, destination, idList, outputIds=True):
+def writeOneAlignmentPhylip(alignment, destination, idList, outputIds=True, codonPos=0):
     nameFieldWidth = 10
     if outputIds:
         for seqid in idList:
@@ -651,6 +651,8 @@ def writeOneAlignmentPhylip(alignment, destination, idList, outputIds=True):
     if len(theseIds) < len(idList):
         #nullSeq = UnknownSeq(alignment.get_alignment_length(), alphabet=alignment._alphabet)
         nullSeq = '-'*alignment.get_alignment_length()
+        if codonPos:
+            nullSeq = nullSeq[:len(nullSeq)/3]
     seqDict = {}
     for record in alignment:
         seqDict[record.id] = record.seq
@@ -660,7 +662,14 @@ def writeOneAlignmentPhylip(alignment, destination, idList, outputIds=True):
         if outputIds:
             destination.write("{:{width}}  ".format(seqid, width = nameFieldWidth))
         if seqid in theseIds:
-            destination.write(str(seqDict[seqid])+"\n")
+            seqStr = str(seqDict[seqid])
+            if codonPos:
+                codonPosStr = ''
+                for i in range(len(seqStr)):
+                    if ((i+1) % 3) == codonPos:
+                        codonPosStr += seqStr[i]
+                seqStr = codonPosStr
+            destination.write(seqStr+"\n")
         else:
             destination.write(str(nullSeq)+"\n")
 
@@ -742,7 +751,7 @@ def outputCodonsProteinsPhylip(codonAlignments, proteinAlignments, destination):
 
     return()
 
-def concatenate_codons_proteins(codonAlignments, proteinAlignments):
+def concatenate_codons_proteins(codonAlignments, proteinAlignments, codonPos=0):
     if Debug:
         LOG.write("output_codons_proteins_fasta, ncodonAln=%d, nprotAln=%d\n"%(len(codonAlignments), len(proteinAlignments)))
     if len(codonAlignments) + len(proteinAlignments) == 0:
@@ -754,7 +763,14 @@ def concatenate_codons_proteins(codonAlignments, proteinAlignments):
         for seqRecord in codonAlignments[alignmentId]:
             if not seqRecord.id in taxonCodons:
                 taxonCodons[seqRecord.id] = {}
-            taxonCodons[seqRecord.id][alignmentId] = str(seqRecord.seq)
+            fullseq = str(seqRecord.seq)
+            if codonPos:
+                codonPosSeq = ''
+                for i in range(0, len(fullseq), 3):
+                    codonPosSeq +=fullseq[i]
+                taxonCodons[seqRecord.id][alignmentId] = codonPosSeq
+            else:
+                taxonCodons[seqRecord.id][alignmentId] = fullseq
             taxonSet.add(seqRecord.id)
     taxonProteins={}
     for alignmentId in proteinAlignments:
@@ -772,10 +788,12 @@ def concatenate_codons_proteins(codonAlignments, proteinAlignments):
     for taxon in taxonSet:
         seqDict[taxon] = ""
         for alignmentId in alignmentIdList:
-            al_len = codonAlignments[alignmentId].get_alignment_length()
             if taxon in taxonCodons and alignmentId in taxonCodons[taxon]:
                 seqDict[taxon] += taxonCodons[taxon][alignmentId]
             else:
+                al_len = codonAlignments[alignmentId].get_alignment_length()
+                if codonPos:
+                    al_len /= 3
                 seqDict[taxon] += "-"*al_len+"\n"
         for alignmentId in sorted(proteinAlignments):
             al_len = proteinAlignments[alignmentId].get_alignment_length()
