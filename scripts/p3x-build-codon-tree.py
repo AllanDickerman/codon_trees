@@ -668,8 +668,7 @@ if len(proteinAlignments):
     #raxmlCommand.extend(["-e", "0.1"]) #limit on precision, faster than default 0.1
 
     if args.analyzePos3Codons:
-        # write 3rd codon position columns to phylip file
-        #codonPos3_alignmentFile = phyloFileBase+"_codonPos3.phy"
+        # write 3rd codon position columns to aligned fasta file
         codonPos3_alignmentFile = phyloFileBase+"_codonPos3.afa"
         filesToMoveToDetailsFolder.append(codonPos3_alignmentFile)
         F = open(codonPos3_alignmentFile, "w")
@@ -677,7 +676,6 @@ if len(proteinAlignments):
         for seqId in seqDict:
             F.write(">"+seqId+"\n"+seqDict[seqId]+"\n")
         F.close()
-        #phylocode.writeCodonPos3ConcatenatedAlignmentsPhylip(codonAlignments, codonPos3_alignmentFile)
 
     if args.bootstrapReps > 0:
         raxmlCommand.extend(["-f", "a", "-x", "12345", "-N", str(args.bootstrapReps)]) 
@@ -770,6 +768,22 @@ if len(proteinAlignments) and not args.deferRaxml:
         LOG.write("codonTree newick relabeled with genome names written to "+renamedNewickFile+"\n")
         LOG.flush()
 
+        if args.analyzePos3Codons and treeWithGenomeIdsFile:
+            # fit tree to distances from 3rd codon position columns 
+            codonPos3_alignmentFile
+            fileBase = phyloFileBase+"_codonPos3_branchlengths"
+            # -f e optimize model parameters+branch lengths for given input tree
+            raxmlCommand = [args.raxmlExecutable, "-s", codonPos3_alignmentFile, "-n", fileBase, "-m",  "GTRCAT", "-f", "e", "-t", "RAxML_bestTree."+phyloFileBase]
+            raxml_command_lines.append(" ".join(raxmlCommand))
+            raxml_analysis_goal.append("Optimize best tree to branch lengths from 3rd codon positions.")
+            proc_start_time = time()
+            result_code = subprocess.call(raxmlCommand, shell=False)
+            raxml_process_time.append(time() - proc_start_time)
+            LOG.write("Optimize best tree to branch lengths from 3rd codon positions.\n")
+            if os.path.exists("RAxML_result."+fileBase):
+                os.rename("RAxML_result."+fileBase, phyloFileBase + "_codonPos3_branchlengths.nwk")
+                filesToMoveToDetailsFolder.append(phyloFileBase + "_codonPos3_branchlengths.nwk")
+                filesToMoveToDetailsFolder.append("RAxML_info."+fileBase)
 
         if args.writePhyloxml and treeWithGenomeIdsFile:
             LOG.write("writePhyloxml\n")
