@@ -24,7 +24,7 @@ def genomeIdFromFigId(figId):
 
 parser = argparse.ArgumentParser(description="Codon-oriented aligment and tree analysis of PATRIC protein families", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--parametersJson", metavar="file.json", type=str, help="parameters in json format (command line overrides)")
-parser.add_argument("--outputBase", metavar="filebase", type=str, help="base name for output files, def=codontree")
+parser.add_argument("--outputBase", "--prefix", metavar="filebase", type=str, help="base name for output files, def=codontree")
 parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="for output, create if needed")
 parser.add_argument("--genomeIdsFile", metavar="file", type=str, nargs="*", help="file with PATRIC genome IDs, one per line (or first column of TSV)")
 parser.add_argument("--genomeGroup", metavar="name", type=str, nargs="*", help="name of user's genome group at PATRIC")
@@ -59,7 +59,6 @@ parser.add_argument("--writePgfamCountMatrix", type=float, help="write table of 
 parser.add_argument("--writePhyloxml", action='store_true', help="write tree in phyloxml format")
 parser.add_argument("--phyloxmlFields", type=str, metavar='data fields', help="comma-sparated genome fields for phyloxml")
 parser.add_argument("--pathToFigtreeJar", type=str, metavar="path", help="not needed if figtree executable on path")
-parser.add_argument("--universalRolesFile", type=str, metavar="path", help="path to file with universal roles to select conserved genes")
 parser.add_argument("--focusGenome", metavar="id", type=str, help="to be highlighted in color in Figtree")
 parser.add_argument("--debugMode", action='store_true', help="more output to log file")
 parser.add_argument("--authToken", metavar="STRING", type=str, help="patric authentication token")
@@ -569,12 +568,14 @@ if len(proteinAlignments):
     proteinAlignments = selectedAlignments
 
     if args.writePgfamAlignments:
+        os.mkdir("protein_alignments")
         for homolog in proteinAlignments:
-            SeqIO.write(proteinAlignments[homolog], homolog+".afa", "fasta")
+            SeqIO.write(proteinAlignments[homolog], "protein_alignments/"+homolog+".afa", "fasta")
     if args.writePgfamAlignmentsDNA:
+        os.mkdir("dna_alignments")
         for homolog in proteinAlignments:
             if homolog in codonAlignments:
-                SeqIO.write(codonAlignments[homolog], homolog+".afn", "fasta")
+                SeqIO.write(codonAlignments[homolog], "dna_alignments/" + homolog+".afn", "fasta")
 
 # it is possible all codon alignments failed, remove from intent to analyze
     if len(codonAlignments) == 0:
@@ -616,7 +617,6 @@ if len(proteinAlignments):
             F = open("RAxML_info."+proteinFileBase)
             bestModel = None
             bestScore = 0
-            empiricalFrequencies
             for line in F:
                 m = re.match(r"\s+Partition: 0 best-scoring AA model: (\S+) likelihood (\S+)", line)
                 if m:
@@ -1004,7 +1004,7 @@ for fn in filesToMoveToDetailsFolder:
         LOG.write("tried to move {} to detailsDirectory, but not found.\n".format(fn))
 LOG.write("files moved: %d\n"%numMoved)
 filesToDelete.extend(glob.glob("RAxML*"))
-if args.debugMode:
+if not args.debugMode:
     numDeleted = 0
     for fn in filesToDelete:
         os.remove(fn)
