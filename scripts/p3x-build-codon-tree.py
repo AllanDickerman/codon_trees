@@ -23,7 +23,6 @@ def genomeIdFromFigId(figId):
     return None
 
 parser = argparse.ArgumentParser(description="Codon-oriented aligment and tree analysis of PATRIC protein families", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument("--parametersJson", metavar="file.json", type=str, help="parameters in json format (command line overrides)")
 parser.add_argument("--outputBase", "--prefix", metavar="filebase", type=str, help="base name for output files, def=codontree")
 parser.add_argument("--outputDirectory", type=str, metavar="out_dir", help="for output, create if needed")
 parser.add_argument("--genomeIdsFile", metavar="file", type=str, nargs="*", help="file with PATRIC genome IDs, one per line (or first column of TSV)")
@@ -73,31 +72,6 @@ starttime = time()
 genomeIds = set() # list of genome IDs for tree building (enforcing maxGenomesMissing and maxAllowedDupes)
 optionalGenomeIds = set()
 
-if args.parametersJson:
-    # read parameters in json file, avoiding overwriting any specified on command line
-    params = json.load(open(args.parametersJson))
-    if "output_path" in params and not args.outputDirectory:
-        args.outputDirectory = os.path.abspath(params["output_path"])
-    if "output_file" in params and not args.outputBase:
-        args.outputBase = params["output_file"]
-    if "genome_group" in params: #not necessary if UI flattens these out to ids
-        if not args.genomeGroup:
-            args.genomeGroup = []
-        args.genomeGroup.extend(params["genome_group"])
-    if "genome_ids" in params: 
-        genomeIds |= set(params["genome_ids"])
-    if "optional_genome_ids" in params:
-        optionalGenomeIds |= set(params["optional_genome_ids"])
-    if "number_of_genes" in params:
-        args.maxGenes = params["number_of_genes"]
-    if "bootstraps" in params:
-        if params["bootstraps"]:
-            args.bootstrapReps = 100
-    if "max_genomes_missing" in params:
-        args.maxGenomesMissing = params["max_genomes_missing"]
-    if "max_allowed_dups" in params:
-        args.maxAllowedDups = params["max_allowed_dups"]
-    
 if not args.outputDirectory:
     args.outputDirectory="./"
 if not args.outputDirectory.endswith("/"):
