@@ -467,7 +467,7 @@ proteinPositions=0
 codonPositions = 0
 protein_substitution_model = args.proteinModel
 rate_model = args.rateModel
-if numTaxa > 50:
+if numTaxa > 500:
     rate_model = 'CAT'  # faster with this many taxa, per RAxML manual
 
 raxmlCommand = []
@@ -595,7 +595,7 @@ if len(proteinAlignments):
                 m = re.match(r"\s+Partition: 0 best-scoring AA model: (\S+) likelihood (\S+)", line)
                 if m:
                     score = float(m.group(2))
-                    if score < bestScore:
+                    if (bestScore == 0) or (score > bestScore):
                         bestScore = score
                         bestModel = m.group(1)
                         if "empirical base frequencies" in line:
@@ -992,6 +992,7 @@ for fn in filesToMoveToDetailsFolder:
         LOG.write("tried to move {} to detailsDirectory, but not found.\n".format(fn))
 LOG.write("files moved: %d\n"%numMoved)
 filesToDelete.extend(glob.glob("RAxML*"))
+filesToDelete.append(glob.glob("*.reduced"))
 if not args.debugMode:
     numDeleted = 0
     for fn in filesToDelete:
