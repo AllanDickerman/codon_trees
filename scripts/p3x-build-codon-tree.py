@@ -542,10 +542,14 @@ if len(proteinAlignments):
     proteinAlignments = selectedAlignments
 
     if args.writePgfamAlignments:
+        if os.path.exists("protein_alignments"):
+            shutil.rmtree("protein_alignments")
         os.mkdir("protein_alignments")
         for homolog in proteinAlignments:
             SeqIO.write(proteinAlignments[homolog], "protein_alignments/"+homolog+".afa", "fasta")
     if args.writePgfamAlignmentsDNA:
+        if os.path.exists("dna_alignments"):
+            shutil.rmtree("dna_alignments")
         os.mkdir("dna_alignments")
         for homolog in proteinAlignments:
             if homolog in codonAlignments:
@@ -996,9 +1000,10 @@ filesToDelete.append(glob.glob("*.reduced"))
 if not args.debugMode:
     numDeleted = 0
     for fn in filesToDelete:
-        os.remove(fn)
-        numDeleted += 1
-        LOG.write("\t"+fn+"\n")
+        if os.path.exists(fn):
+            os.remove(fn)
+            numDeleted += 1
+            LOG.write("\t"+fn+"\n")
     LOG.write("files deleted: %d\n"%numDeleted)
 logfileName = os.path.basename(logfileName)
 # finally, move the log file into the detailsDirectory
