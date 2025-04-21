@@ -996,7 +996,7 @@ for fn in filesToMoveToDetailsFolder:
         LOG.write("tried to move {} to detailsDirectory, but not found.\n".format(fn))
 LOG.write("files moved: %d\n"%numMoved)
 filesToDelete.extend(glob.glob("RAxML*"))
-filesToDelete.append(glob.glob("*.reduced"))
+filesToDelete.extend(glob.glob("*.reduced"))
 if not args.debugMode:
     numDeleted = 0
     for fn in filesToDelete:
